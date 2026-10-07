@@ -180,8 +180,27 @@ def _first_diff(x, y, path="item"):
     return path, x, y
 
 
+_COSMETICO_BOTAO = (("[·] Baixar", "📥 Baixar"), ("[·] Ir para", "🗜️ Ir para"))
+
+
+def _normaliza_cosmetico(x):
+    """Diferenças ESTÉTICAS intencionais do e-mail (ver CHANGELOG-API): botão sem '[·]' e valor
+    com vírgula (R$ 1,00). O original é normalizado para o formato novo; todo o resto é comparado igual."""
+    import re
+    if isinstance(x, str):
+        for velho, novo in _COSMETICO_BOTAO:
+            x = x.replace(velho, novo)
+        return re.sub(r"(?<=<strong>)R\$ (\d+)\.(\d{2})(?=</strong>)",
+                      lambda m: f"R$ {int(m.group(1)):,}".replace(",", ".") + "," + m.group(2), x)
+    if isinstance(x, (list, tuple)):
+        return type(x)(_normaliza_cosmetico(i) for i in x)
+    if isinstance(x, dict):
+        return {k: _normaliza_cosmetico(v) for k, v in x.items()}
+    return x
+
+
 def assert_same(original: Side, novo: Side):
-    a, b = original.log, novo.log
+    a, b = _normaliza_cosmetico(original.log), novo.log
     for i, (x, y) in enumerate(zip(a, b)):
         if x != y:
             path, vx, vy = _first_diff(x, y, f"log[{i}] {x[0] if x else ''}")

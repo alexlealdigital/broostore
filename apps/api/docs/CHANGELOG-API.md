@@ -154,3 +154,10 @@ Coisas suspeitas que vi e **deixei exatamente como estavam** (nada aqui foi pedi
 `MUDANCAS_REALIZADAS.md`, `DEPLOY_RAPIDO.md`, `CHECKLIST_DEPLOY.md`, `VERCEL_VS_RENDER.md`, `test_local.sh`
 (obsoletos) e o arquivo avulso `delivered` (cópia acidental/antiga de um worker). O `README.md` e o `render.yaml`
 antigos foram substituídos por `README.md` e `docs/RENDER.md`.
+
+## Ajuste estetico dos e-mails (apos o 1o teste real de PIX)
+
+- Os botoes de download mostravam `[·]` (emoji perdido no original); agora usam 📥 / 🗜️.
+- O valor no texto do e-mail aparecia como `R$ 1.00`; agora `R$ 1,00` (padrao brasileiro, milhar com ponto).
+- So muda o texto dos e-mails. Nenhum valor, status ou rota mudou. Os testes de comparacao com o original
+  normalizam apenas essas duas diferencas.

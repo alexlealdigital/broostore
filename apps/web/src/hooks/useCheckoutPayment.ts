@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { ApiError, api } from '@/lib/api';
+import { mensagemRecusaCartao } from '@/lib/cardErrors';
 import { buildCardPayload, buildPixPayload, type BasePaymentInput } from '@/lib/checkoutPayload';
 import { createCardToken, normalizeMpError } from '@/lib/mercadopago';
 import { onlyDigits } from '@/lib/format';
@@ -105,7 +106,7 @@ export function useCheckoutPayment() {
           } else if (res.status === 'in_process' || res.status === 'pending') {
             setResult({ kind: 'review', message: res.mensagem || 'Pagamento em análise. Você receberá um e-mail assim que for aprovado.' });
           } else {
-            setError(res.mensagem || 'Pagamento não aprovado. Verifique os dados do cartão ou tente outra forma de pagamento.');
+            setError(mensagemRecusaCartao(res.status_detail));
           }
         } catch (err) {
           if (err instanceof ApiError && (err.kind === 'timeout' || err.kind === 'network' || err.kind === 'parse')) {

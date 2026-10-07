@@ -90,11 +90,17 @@ describe('Pagamento com cartao', () => {
 
   it('cartao recusado mostra a mensagem e permite tentar de novo', async () => {
     const user = userEvent.setup();
-    apiMock.criarCobrancaCartao.mockResolvedValue({ status: 'rejected', mensagem: 'Pagamento não aprovado (cc_rejected_insufficient_amount).' });
+    apiMock.criarCobrancaCartao.mockResolvedValue({
+      status: 'rejected',
+      status_detail: 'cc_rejected_insufficient_amount',
+      mensagem: 'Pagamento não aprovado (cc_rejected_insufficient_amount). Verifique os dados do cartão.',
+    });
     setup();
     await fillCard(user);
     await user.click(screen.getByRole('button', { name: /Pagar R\$ 59,00 com cartão/ }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('cc_rejected_insufficient_amount');
+    const alerta = await screen.findByRole('alert');
+    expect(alerta).toHaveTextContent('Saldo ou limite insuficiente');
+    expect(alerta).not.toHaveTextContent('cc_rejected');
     expect(screen.getByRole('button', { name: /Pagar R\$ 59,00 com cartão/ })).toBeEnabled();
   });
 

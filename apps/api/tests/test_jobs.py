@@ -35,7 +35,7 @@ def test_digital_entrega_ebook(world, db_session):
     (msg,) = world.smtp.messages()
     assert msg["subject"] == 'BrooStore: Seu e-book "Meu Ebook" está pronto! 🎉'
     assert msg["to"] == "cliente@example.test" and "https://dl.example.test/ebook" in msg["html"]
-    assert "R$ 29.90" in msg["html"] and "Olá, Maria," in msg["html"]
+    assert "R$ 29,90" in msg["html"] and "Olá, Maria," in msg["html"]
     # venda local + Supabase (service role) registradas
     assert [(s.product_id, s.amount) for s in Sale.query.all()] == [(1, 29.9)]
     assert world.http.sales_posted == [{"product_id": 1, "customer_email": "cliente@example.test",
@@ -129,7 +129,7 @@ def test_fisico_envia_email_de_pedido_com_endereco(world, db_session):
     run()
     (msg,) = world.smtp.messages()
     assert msg["subject"] == 'BrooStore: Pedido "Livro Impresso" confirmado! 📦'
-    assert "Rua A 10, ap 2" in msg["html"] and "CEP: 01001-000" in msg["html"] and "R$ 75.50" in msg["html"]
+    assert "Rua A 10, ap 2" in msg["html"] and "CEP: 01001-000" in msg["html"] and "R$ 75,50" in msg["html"]
     assert reload_cob("ref-f").status == "delivered" and Sale.query.count() == 1
 
 
@@ -485,3 +485,8 @@ def test_rq_real_worker_agenda_retry_quando_o_email_falha(world, db_session):
 def jobs_name():
     from broostore_api.config import JOB_NAME
     return JOB_NAME
+
+
+def test_brl_formata_no_padrao_brasileiro():
+    from broostore_api.services.email import _brl
+    assert _brl(1) == "1,00" and _brl(29.9) == "29,90" and _brl(1234.5) == "1.234,50" and _brl(None) == "None"

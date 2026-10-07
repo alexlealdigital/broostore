@@ -22,6 +22,15 @@ logger = logging.getLogger("broostore")
 CONTATO_DESTINO = "profalexleal@gmail.com"
 
 
+def _brl(valor) -> str:
+    """Valor no padrao brasileiro (1234.5 -> 1.234,50). Cosmetico: so o texto do e-mail."""
+    try:
+        txt = f"{float(valor):,.2f}"
+    except (TypeError, ValueError):
+        return str(valor)
+    return txt.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def _credenciais():
     """(servidor, usuário, senha) ou None se EMAIL_USER/EMAIL_PASSWORD não existirem."""
     settings = get_settings()
@@ -127,7 +136,7 @@ def enviar_email_produto_fisico(destinatario, nome_cliente, valor, nome_produto,
         pass
 
     instrucoes = f"""
-        <p>Agradecemos por escolher a <strong>BrooStore</strong>! Seu pagamento de <strong>R$ {valor:.2f}</strong> foi confirmado.</p>
+        <p>Agradecemos por escolher a <strong>BrooStore</strong>! Seu pagamento de <strong>R$ {_brl(valor)}</strong> foi confirmado.</p>
         <h2 style="color:#27ae60;">Pedido recebido com sucesso! 🎉</h2>
         <p>Seu pedido de <strong>{nome_produto}</strong> foi confirmado e está sendo preparado.</p>
         {endereco_html}
@@ -181,37 +190,37 @@ def enviar_email_confirmacao(destinatario, nome_cliente, valor, link_produto, co
     if chave_acesso and nome_produto == "Compressão de PDF":
         assunto = "BrooStore: Seu código de compressão de PDF chegou! 🗜️"
         instrucoes_entrega = f"""
-            <p>Agradecemos por escolher a <strong>BrooStore</strong>! Seu pagamento de <strong>R$ {valor:.2f}</strong> foi confirmado.</p>
+            <p>Agradecemos por escolher a <strong>BrooStore</strong>! Seu pagamento de <strong>R$ {_brl(valor)}</strong> foi confirmado.</p>
             <h2 style="color: #fca311;">Seu código de liberação está aqui! 🔑</h2>
             <p>Cole este código na página de compressão para baixar seu PDF reduzido:</p>
             <div style="background-color: #1a1400; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0; border: 2px dashed #fca311;">
                 <code style="font-size: 1.1em; font-weight: bold; color: #fca311; display: block; word-break: break-all;">{chave_acesso}</code>
             </div>
             <div style="text-align: center; margin: 25px 0;">
-                <a href="https://mercadopago-final.onrender.com/comprimir-pdf.html" style="background-color: #fca311; color: #000; padding: 14px 28px; text-decoration: none; border-radius: 25px; font-weight: bold;">[·] Ir para o Compressor</a>
+                <a href="https://mercadopago-final.onrender.com/comprimir-pdf.html" style="background-color: #fca311; color: #000; padding: 14px 28px; text-decoration: none; border-radius: 25px; font-weight: bold;">🗜️ Ir para o Compressor</a>
             </div>
             <p style="font-size:0.85em; color:#888;">Este código é de uso único e válido por 24 horas.</p>
         """
     elif chave_acesso:
         assunto = f"BrooStore: Sua chave de acesso para \"{nome_produto}\" chegou! 🚀"
         instrucoes_entrega = f"""
-            <p>Agradecemos por escolher a <strong>BrooStore</strong>! Seu pagamento de <strong>R$ {valor:.2f}</strong> foi confirmado.</p>
+            <p>Agradecemos por escolher a <strong>BrooStore</strong>! Seu pagamento de <strong>R$ {_brl(valor)}</strong> foi confirmado.</p>
             <h2 style="color: #27ae60;">Sua Chave de Acesso está aqui! 🔑</h2>
             <div style="background-color: #e0f2f1; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0; border: 2px dashed #27ae60;">
                 <code style="font-size: 1.5em; font-weight: bold; color: #14213d; display: block; word-break: break-all;">{chave_acesso}</code>
             </div>
             <p>Copie a chave acima e use-a no instalador. Se precisar baixar:</p>
             <div style="text-align: center; margin: 25px 0;">
-                <a href="{link_produto}" style="background-color: #27ae60; color: white; padding: 14px 28px; text-decoration: none; border-radius: 25px; font-weight: bold;">[·] Baixar o Instalador</a>
+                <a href="{link_produto}" style="background-color: #27ae60; color: white; padding: 14px 28px; text-decoration: none; border-radius: 25px; font-weight: bold;">📥 Baixar o Instalador</a>
             </div>
         """
     else:
         assunto = f"BrooStore: Seu e-book \"{nome_produto}\" está pronto! 🎉"
         instrucoes_entrega = f"""
-            <p>Agradecemos por escolher a <strong>BrooStore</strong>! Seu pagamento de <strong>R$ {valor:.2f}</strong> foi confirmado.</p>
+            <p>Agradecemos por escolher a <strong>BrooStore</strong>! Seu pagamento de <strong>R$ {_brl(valor)}</strong> foi confirmado.</p>
             <h2>Agora é hora de devorar o conteúdo!</h2>
             <div style="text-align: center; margin: 25px 0;">
-                <a href="{link_produto}" style="background-color: #f59e0b; color: #14213d; padding: 14px 28px; text-decoration: none; border-radius: 25px; font-weight: bold;">[·] Baixar Meu E-book</a>
+                <a href="{link_produto}" style="background-color: #f59e0b; color: #14213d; padding: 14px 28px; text-decoration: none; border-radius: 25px; font-weight: bold;">📥 Baixar Meu E-book</a>
             </div>
         """
 
