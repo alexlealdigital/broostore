@@ -1,0 +1,1555 @@
+# Importações existentes (e 'func' do SQLAlchemy para contar)
+from flask import Flask, jsonify, request, send_from_directory
+from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
+from datetime import datetime, date, timedelta
+import os
+import mercadopago
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import hmac
+import hashlib
+import redis
+from rq import Queue
+from sqlalchemy.orm import declarative_base
+from sqlalchemy import func
+import resend
+import requests as http_requests
+ 
+# Inicialização do Flask
+app = Flask(__name__, static_folder='static')
+ 
+# Configuração de CORS
+NETLIFY_ORIGIN_PROD  = "https://rread.netlify.app"
+RENDER_ORIGIN        = "https://mercadopago-final.onrender.com"
+NETLIFY_ORIGIN_TEST  = "https://rankedsale.netlify.app"
+BROOSTORE_ORIGIN     = "https://broostore.netlify.app"
+BROOSTOCK_ORIGIN     = "https://brootechstock.netlify.app"  # NOVO: app BrooStock (compra de chave no cadastro)
+CORS(app,
+     origins=[NETLIFY_ORIGIN_PROD, RENDER_ORIGIN, NETLIFY_ORIGIN_TEST, BROOSTORE_ORIGIN, BROOSTOCK_ORIGIN],
+     methods=["GET", "POST", "OPTIONS"],
+     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+     supports_credentials=False)
+ 
+# ---------- CONFIGURAÇÃO DO BANCO DE DADOS E EXTENSÕES ----------
+db_url = os.environ.get("DATABASE_URL", "sqlite:///cobrancas.db")
+ 
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql+psycopg://", 1)
+elif db_url.startswith("postgresql://"):
+    db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+ 
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "asdf#FGSgvasgf$5$WGT")
+ 
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_pre_ping": True, 
+    "pool_recycle": 3600,
+    # Desliga prepared statements automáticos do psycopg (compatível com
+    # pooler de conexão em modo "transaction" — PgBouncer/Supabase/Render).
+    "connect_args": {"prepare_threshold": None},
+}
+ 
+db = SQLAlchemy(app)
+ 
+# Configuração do Redis e RQ
+redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379')
+try:
+    redis_conn = redis.from_url(redis_url, socket_connect_timeout=3)
+    redis_conn.ping()
+    q = Queue(connection=redis_conn)
+except Exception as _redis_err:
+    print(f"[REDIS] Indisponível na inicialização: {_redis_err}")
+    redis_conn = None
+    q = None
+ 
+# ---------- MODELOS DE DADOS ----------
+ 
+class Vendedor(db.Model):
+    __tablename__ = "vendedores"
+    codigo_ranking = db.Column(db.String(50), primary_key=True) 
+    nome_vendedor = db.Column(db.String(200), nullable=False)
+    email_contato = db.Column(db.String(200), nullable=True)
+ 
+    def to_dict(self):
+        return {
+            "codigo_ranking": self.codigo_ranking,
+            "nome_vendedor": self.nome_vendedor
+        }
+ 
+# NOVO: Modelo de Cupom
+class Cupom(db.Model):
+    __tablename__ = "cupons"
+    id = db.Column(db.Integer, primary_key=True)
+    codigo = db.Column(db.String(50), unique=True, nullable=False)
+    tipo = db.Column(db.String(20), nullable=False, default='percentual')  # 'percentual' ou 'valor_fixo'
+    valor = db.Column(db.Float, nullable=False)  # 70 (%) ou 10 (R$)
+    produto_id = db.Column(db.Integer, db.ForeignKey('produtos.id'), nullable=True)  # NULL = todos
+    produto = db.relationship('Produto')
+    valido_de = db.Column(db.Date, default=date.today)
+    valido_ate = db.Column(db.Date, nullable=True)
+    usos_maximos = db.Column(db.Integer, nullable=True)  # NULL = ilimitado
+    usos_atuais = db.Column(db.Integer, default=0)
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+ 
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "codigo": self.codigo,
+            "tipo": self.tipo,
+            "valor": self.valor,
+            "produto_id": self.produto_id,
+            "valido_ate": self.valido_ate.isoformat() if self.valido_ate else None,
+            "usos_maximos": self.usos_maximos,
+            "usos_atuais": self.usos_atuais,
+            "ativo": self.ativo
+        }
+ 
+    def esta_valido(self):
+        """Verifica se o cupom está ativo e dentro da validade"""
+        if not self.ativo:
+            return False, "Cupom inativo"
+        
+        hoje = date.today()
+        if self.valido_de and hoje < self.valido_de:
+            return False, "Cupom ainda não está válido"
+        if self.valido_ate and hoje > self.valido_ate:
+            return False, "Cupom expirado"
+        
+        if self.usos_maximos is not None and self.usos_atuais >= self.usos_maximos:
+            return False, "Limite de usos atingido"
+        
+        return True, "Válido"
+ 
+    def calcular_desconto(self, valor_original):
+        """Calcula o valor com desconto aplicado"""
+        if self.tipo == 'percentual':
+            desconto = valor_original * (self.valor / 100)
+        else:  # valor_fixo
+            desconto = min(self.valor, valor_original)  # Não permite valor negativo
+        
+        valor_final = max(0, valor_original - desconto)
+        return {
+            "valor_original": valor_original,
+            "desconto": desconto,
+            "valor_final": valor_final,
+            "percentual_aplicado": self.valor if self.tipo == 'percentual' else (desconto / valor_original * 100)
+        }
+ 
+ 
+class Cobranca(db.Model):
+    __tablename__ = "cobrancas"
+    id = db.Column(db.Integer, primary_key=True)
+    external_reference = db.Column(db.String(100), unique=True, nullable=False)
+    cliente_nome = db.Column(db.String(200), nullable=False)
+    cliente_email = db.Column(db.String(200), nullable=False)
+    cliente_telefone = db.Column(db.String(20), nullable=True)
+    valor = db.Column(db.Float, nullable=False)
+    valor_original = db.Column(db.Float, nullable=True)  # NOVO: Valor antes do desconto
+    status = db.Column(db.String(50), default="pending", nullable=False)
+    data_criacao = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    
+    product_id = db.Column(db.Integer, db.ForeignKey('produtos.id'), nullable=True)
+    produto = db.relationship('Produto')
+    
+    chave_usada = db.relationship('ChaveLicenca', backref='cobranca_rel', uselist=False) 
+    
+    vendedor_codigo = db.Column(db.String(50), db.ForeignKey('vendedores.codigo_ranking'), nullable=True)
+    vendedor = db.relationship('Vendedor', backref='vendas')
+    
+    cupom_id = db.Column(db.Integer, db.ForeignKey('cupons.id'), nullable=True)  # NOVO
+    cupom = db.relationship('Cupom')
+    observacoes = db.Column(db.Text, nullable=True)  # JSON com endereco para produto fisico
+ 
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "external_reference": self.external_reference,
+            "cliente_nome": self.cliente_nome,
+            "cliente_email": self.cliente_email,
+            "cliente_telefone": self.cliente_telefone,
+            "valor": self.valor,
+            "valor_original": self.valor_original,
+            "status": self.status,
+            "data_criacao": self.data_criacao.isoformat() if self.data_criacao else None,
+            "vendedor_codigo": self.vendedor_codigo,
+            "cupom_id": self.cupom_id
+        }
+ 
+ 
+class Produto(db.Model):
+    __tablename__ = "produtos"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(200), nullable=False)
+    preco = db.Column(db.Float, nullable=False)
+    link_download = db.Column(db.String(500), nullable=False)
+    tipo = db.Column(db.String(50), default="ebook", nullable=False) 
+ 
+ 
+class ChaveLicenca(db.Model):
+    __tablename__ = "chaves_licenca"
+    id = db.Column(db.Integer, primary_key=True)
+    chave_serial = db.Column(db.String(100), unique=True, nullable=False)
+    produto_id = db.Column(db.Integer, db.ForeignKey('produtos.id'), nullable=False)
+    vendida = db.Column(db.Boolean, default=False, nullable=False)
+    vendida_em = db.Column(db.DateTime, nullable=True)
+    cobranca_id = db.Column(db.Integer, db.ForeignKey('cobrancas.id'), unique=True, nullable=True) 
+    cliente_email = db.Column(db.String(200), nullable=True)
+    ativa_no_app = db.Column(db.Boolean, default=False, nullable=False) 
+
+
+# ---------- ASSINATURA / LICENÇA (BrooStock) ----------
+# Tabelas NOVAS — criadas pelo db.create_all() abaixo, sem ALTER em tabela existente.
+class PlanoAssinatura(db.Model):
+    __tablename__ = "planos_assinatura"
+    produto_id = db.Column(db.Integer, db.ForeignKey('produtos.id'), primary_key=True)
+    dias = db.Column(db.Integer, nullable=False)            # 30, 365...
+    rotulo = db.Column(db.String(50), nullable=True)        # 'mensal' / 'anual'
+
+
+class Licenca(db.Model):
+    __tablename__ = "licencas"
+    id = db.Column(db.Integer, primary_key=True)
+    cliente_email = db.Column(db.String(200), nullable=False, index=True)
+    plano = db.Column(db.String(50), nullable=True)
+    status = db.Column(db.String(30), default="ativa", nullable=False)
+    inicia_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    expira_em = db.Column(db.DateTime, nullable=False)
+    ultimo_pagamento_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    cobranca_id = db.Column(db.Integer, db.ForeignKey('cobrancas.id'), nullable=True)
+    produto_id = db.Column(db.Integer, db.ForeignKey('produtos.id'), nullable=True)
+    ultimo_aviso = db.Column(db.String(20), nullable=True)  # '7d' | '2d' | 'expirado' | None
+ 
+ 
+# Criação das tabelas
+with app.app_context():
+    db.create_all()
+ 
+# --- FUNÇÕES AUXILIARES ---
+def validar_assinatura_webhook(request):
+    try:
+        x_signature = request.headers.get("x-signature")
+        x_request_id = request.headers.get("x-request-id")
+        
+        if not x_signature or not x_request_id:
+            return False
+        
+        parts = x_signature.split(",")
+        ts = None
+        hash_signature = None
+        
+        for part in parts:
+            key_value = part.split("=", 1)
+            if len(key_value) == 2:
+                key = key_value[0].strip()
+                value = key_value[1].strip()
+                if key == "ts":
+                    ts = value
+                elif key == "v1":
+                    hash_signature = value
+        
+        secret_key = os.environ.get("WEBHOOK_SECRET")
+        if not ts or not hash_signature or not secret_key:
+            return False
+        
+        data_id = request.args.get("data.id", "")
+        manifest = f"id:{data_id};request-id:{x_request_id};ts:{ts};"
+        calculated_hash = hmac.new(
+            secret_key.encode(),
+            manifest.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        
+        return calculated_hash == hash_signature
+            
+    except Exception as e:
+        print(f"Erro ao validar assinatura: {str(e)}")
+        return False
+ 
+ 
+# ---------- ROTAS DA API ----------
+ 
+@app.route("/")
+def index():
+    return send_from_directory('static', 'index.html')
+ 
+@app.route("/<path:path>")
+def serve_static(path):
+    return send_from_directory('static', path)
+
+
+# NOVO: detalhes de um produto (usado pela página de checkout comprar.html)
+@app.route("/api/produto/<int:produto_id>", methods=["GET"])
+def get_produto(produto_id):
+    try:
+        produto = db.session.get(Produto, produto_id)
+        if not produto:
+            return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
+        return jsonify({
+            "status": "success",
+            "id": produto.id,
+            "nome": produto.nome,
+            "preco": produto.preco,
+            "tipo": produto.tipo,
+        }), 200
+    except Exception as e:
+        print(f"ERRO (GET PRODUTO): {str(e)}")
+        return jsonify({"status": "error", "message": "Falha ao carregar o produto."}), 500
+ 
+
+# NOVO: status da licença por e-mail (consultado pelo BrooStock no login)
+@app.route("/api/licenca/status", methods=["GET"])
+def licenca_status():
+    email = (request.args.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"ativa": False, "motivo": "email_ausente"}), 400
+    try:
+        licenca = (Licenca.query
+                   .filter_by(cliente_email=email)
+                   .order_by(Licenca.expira_em.desc())
+                   .first())
+        if not licenca:
+            # Nunca teve licença -> elegível ao teste grátis
+            return jsonify({"ativa": False, "plano": None, "status": None,
+                            "expira_em": None, "is_trial": False,
+                            "pode_testar": True, "dias_restantes": 0}), 200
+        agora = datetime.utcnow()
+        ativa = bool(licenca.status in ("ativa", "trial") and licenca.expira_em and licenca.expira_em > agora)
+        is_trial = (licenca.status == "trial")
+        dias = 0
+        if licenca.expira_em and licenca.expira_em > agora:
+            dias = (licenca.expira_em - agora).days
+        return jsonify({
+            "ativa": ativa,
+            "plano": licenca.plano,
+            "status": licenca.status,
+            "expira_em": licenca.expira_em.isoformat() if licenca.expira_em else None,
+            "is_trial": is_trial,
+            "pode_testar": False,
+            "dias_restantes": dias,
+        }), 200
+    except Exception as e:
+        print(f"ERRO (LICENCA STATUS): {str(e)}")
+        return jsonify({"ativa": False, "motivo": "erro_interno"}), 500
+
+
+# NOVO: ativa um teste grátis de 7 dias (somente se o e-mail nunca teve licença)
+TRIAL_DIAS = 7
+
+
+def _enviar_boas_vindas(destinatario, expira_em):
+    """E-mail de boas-vindas do teste grátis. Best-effort: nunca derruba o cadastro.
+    Reaproveita o mesmo SMTP (Zoho) usado pelo worker/avisos de expiração."""
+    try:
+        smtp_server = os.environ.get("SMTP_SERVER", "smtp.zoho.com")
+        email_user = os.environ["EMAIL_USER"]
+        email_pass = os.environ["EMAIL_PASSWORD"]
+    except KeyError:
+        print("[TRIAL] Boas-vindas NÃO enviada: SMTP (EMAIL_USER/EMAIL_PASSWORD) não configurado no serviço.")
+        return False
+
+    expira_str = expira_em.strftime("%d/%m/%Y")
+    html = f"""<!DOCTYPE html>
+<html><body style="font-family:Arial,sans-serif;background:#0d1b2a;color:#e0e6ed;padding:24px;">
+  <div style="max-width:560px;margin:0 auto;background:#14213d;border-radius:12px;padding:28px;">
+    <h2 style="color:#48cae4;margin-top:0;">Bem-vindo ao BrooStock! 🎉</h2>
+    <p>Seu <strong>teste grátis de 7 dias</strong> está ativo. Você pode usar o sistema completo
+       até <strong>{expira_str}</strong>, sem cartão e sem compromisso.</p>
+    <p style="margin-top:18px;"><strong>Comece por aqui:</strong></p>
+    <ol style="color:#cdd7e3;line-height:1.7;padding-left:18px;">
+      <li>Cadastre seu primeiro produto (custo, preço e estoque mínimo).</li>
+      <li>Registre uma venda em Movimentações.</li>
+      <li>Veja seu lucro e sua margem no Painel.</li>
+    </ol>
+    <p style="text-align:center;margin:26px 0;">
+      <a href="{BROOSTOCK_ORIGIN}/painel" style="background:#15bcd6;color:#012;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px;display:inline-block;">Abrir o BrooStock</a>
+    </p>
+    <p style="font-size:0.85em;color:#9fb0c3;">Quando quiser, é só assinar para continuar usando depois do teste. Qualquer dúvida, estamos por aqui.</p>
+  </div>
+</body></html>"""
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Bem-vindo ao BrooStock — seus 7 dias grátis começaram 🎉"
+        msg["From"] = email_user
+        msg["To"] = destinatario
+        msg.attach(MIMEText(html, "html"))
+        port = int(os.environ.get("SMTP_PORT", 587))
+        with smtplib.SMTP(smtp_server, port, timeout=15) as server:
+            server.starttls()
+            server.login(email_user, email_pass)
+            server.send_message(msg)
+        print(f"[TRIAL] Boas-vindas enviada para {destinatario}.")
+        return True
+    except Exception as e:
+        print(f"[TRIAL] Falha ao enviar boas-vindas para {destinatario}: {e}")
+        return False
+
+
+@app.route("/api/licenca/trial", methods=["POST"])
+def licenca_trial():
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or request.args.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"ok": False, "motivo": "email_ausente"}), 400
+    try:
+        existente = Licenca.query.filter_by(cliente_email=email).first()
+        if existente:
+            ativa = bool(existente.status in ("ativa", "trial") and existente.expira_em and existente.expira_em > datetime.utcnow())
+            return jsonify({"ok": False, "motivo": "ja_utilizado", "ativa": ativa}), 409
+
+        agora = datetime.utcnow()
+        expira = agora + timedelta(days=TRIAL_DIAS)
+        nova = Licenca(
+            cliente_email=email,
+            plano="trial",
+            status="trial",
+            inicia_em=agora,
+            expira_em=expira,
+            ultimo_pagamento_em=agora,  # coluna NOT NULL; sem significado no trial
+            ultimo_aviso=None,
+        )
+        db.session.add(nova)
+        db.session.commit()
+        print(f"[TRIAL] Teste de {TRIAL_DIAS} dias criado para {email} (expira {expira.date()})")
+        # E-mail de boas-vindas (best-effort: não derruba a ativação se falhar)
+        try:
+            _enviar_boas_vindas(email, expira)
+        except Exception as e:
+            print(f"[TRIAL] Boas-vindas (best-effort) falhou: {e}")
+        return jsonify({"ok": True, "status": "trial", "expira_em": expira.isoformat(), "dias_restantes": TRIAL_DIAS}), 201
+    except Exception as e:
+        db.session.rollback()
+        print(f"ERRO (TRIAL): {str(e)}")
+        return jsonify({"ok": False, "motivo": "erro_interno"}), 500
+ 
+ 
+# ROTA DE GAMIFICAÇÃO
+@app.route("/api/vendedores", methods=["GET"])
+def get_vendedores():
+    try:
+        with app.app_context():
+            vendedores = Vendedor.query.order_by(Vendedor.nome_vendedor).all()
+            return jsonify([v.to_dict() for v in vendedores]), 200
+    except Exception as e:
+        print(f"ERRO (VENDEDORES): {str(e)}")
+        return jsonify({"status": "error", "message": "Não foi possível carregar a lista de vendedores."}), 500
+ 
+ 
+# NOVO: ROTA PARA VALIDAR CUPOM
+@app.route("/api/validar-cupom", methods=["POST"])
+def validar_cupom():
+    """Valida um cupom de desconto e retorna o valor calculado"""
+    try:
+        dados = request.get_json()
+        codigo = dados.get("codigo", "").strip().upper()
+        produto_id = dados.get("produto_id")
+        valor_original = dados.get("valor_original")
+ 
+        if not codigo:
+            return jsonify({"status": "error", "message": "Código do cupom é obrigatório"}), 400
+        
+        if not produto_id or not valor_original:
+            return jsonify({"status": "error", "message": "ID do produto e valor original são obrigatórios"}), 400
+        
+        cupom = Cupom.query.filter_by(codigo=codigo).first()
+        
+        if not cupom:
+            return jsonify({"status": "error", "message": "Cupom não encontrado"}), 404
+            
+        valido, motivo = cupom.esta_valido()
+        if not valido:
+            return jsonify({"status": "error", "message": motivo}), 400
+            
+        # Verifica se o cupom é específico para um produto
+        if cupom.produto_id is not None and cupom.produto_id != int(produto_id):
+            return jsonify({"status": "error", "message": "Este cupom não é válido para este produto"}), 400
+            
+        # Calcula o desconto
+        calculo = cupom.calcular_desconto(float(valor_original))
+        
+        return jsonify({
+            "status": "success",
+            "cupom": cupom.to_dict(),
+            "calculo": calculo
+        }), 200
+        
+    except Exception as e:
+        print(f"Erro ao validar cupom: {str(e)}")
+        return jsonify({"status": "error", "message": f"Erro interno: {str(e)}"}), 500
+ 
+ 
+# WEBHOOK DO MERCADO PAGO
+@app.route("/api/webhook", methods=["POST"])
+def webhook():
+    try:
+        # if not validar_assinatura_webhook(request):
+        #    return jsonify({"status": "error", "message": "Assinatura inválida"}), 401
+ 
+        dados = request.get_json()
+        payment_id = dados.get("data", {}).get("id")
+        
+        if payment_id:
+            q.enqueue('worker.process_mercado_pago_webhook', payment_id)
+ 
+        return jsonify({"status": "success", "message": "Webhook recebido e processamento enfileirado"}), 200
+        
+    except Exception as e:
+        print(f"Erro ao processar webhook: {str(e)}")
+        return jsonify({"status": "error", "message": f"Erro interno ao processar webhook: {str(e)}"}), 500
+ 
+ 
+# ROTA DE CRIAÇÃO DE COBRANÇA (com Cupom e Telefone)
+@app.route("/api/cobrancas", methods=["POST"])
+def create_cobranca():
+    try:
+        dados = request.get_json()
+        
+        if not dados:
+            return jsonify({"status": "error", "message": "Nenhum dado foi enviado."}), 400
+            
+        email_cliente = dados.get("email")
+        nome_cliente = dados.get("nome", "Cliente")
+        telefone_cliente = dados.get("telefone")
+        product_id_recebido = dados.get("product_id")
+        vendedor_codigo_recebido = dados.get("vendedor_codigo")
+        cupom_id_recebido = dados.get("cupom_id")
+        usuario_id = dados.get("usuario_id")  # NOVO
+ 
+        if not product_id_recebido:
+            return jsonify({"status": "error", "message": "ID do produto é obrigatório."}), 400
+        
+        if not email_cliente or "@" not in email_cliente or "." not in email_cliente:
+            return jsonify({"status": "error", "message": "Por favor, insira um email válido e obrigatório."}), 400
+        
+        if telefone_cliente:
+            telefone_limpo = ''.join(filter(str.isdigit, telefone_cliente))
+            if len(telefone_limpo) < 10:
+                return jsonify({"status": "error", "message": "Telefone inválido."}), 400
+ 
+        if vendedor_codigo_recebido:
+            vendedor_existente = Vendedor.query.get(vendedor_codigo_recebido)
+            if not vendedor_existente:
+                 print(f"ALERTA: Código de vendedor inválido: {vendedor_codigo_recebido}. Prosseguindo sem afiliação.")
+                 vendedor_codigo_recebido = None
+        else:
+            vendedor_codigo_recebido = None
+ 
+        produto = db.session.get(Produto, int(product_id_recebido))
+
+        # Valores autoritativos (fonte da verdade = Supabase). NUNCA confiar no cliente.
+        frete_autoritativo = None
+        tipo_autoritativo  = produto.tipo if produto else None
+        p_dados            = {}  # dados fisicos do Supabase para recotacao de frete
+
+        # Sempre sincroniza preço e dados com o Supabase (evita cache desatualizado)
+        try:
+            sb_url  = os.environ.get("SUPABASE_URL", "https://gyepvrzkwesohbagpgfa.supabase.co")
+            sb_key  = os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd5ZXB2cnprd2Vzb2hiYWdwZ2ZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzMDk5OTAsImV4cCI6MjA3Njg4NTk5MH0.ePwzEE8FjikLiTyjbtJXUtIIwFRlaSf5RYe7iKMDnTA")
+            resp = http_requests.get(
+                f"{sb_url}/rest/v1/products?id=eq.{product_id_recebido}&select=id,title,price,link_pdf,frete,tipo,peso_kg,altura_cm,largura_cm,comprimento_cm",
+                headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}"}
+            )
+            rows = resp.json()
+            if rows:
+                p = rows[0]
+                tipo_autoritativo  = (p.get("tipo") or "ebook").strip().lower()
+                frete_autoritativo = float(p.get("frete") or 0)
+                p_dados = {
+                    "price": float(p.get("price") or 0),
+                    "peso_kg": p.get("peso_kg"), "altura_cm": p.get("altura_cm"),
+                    "largura_cm": p.get("largura_cm"), "comprimento_cm": p.get("comprimento_cm"),
+                }
+                if not produto:
+                    # Produto novo: cria localmente
+                    produto = Produto(
+                        id=p["id"],
+                        nome=p["title"],
+                        preco=float(p["price"]),
+                        link_download=p.get("link_pdf") or "",
+                        tipo=tipo_autoritativo
+                    )
+                    db.session.add(produto)
+                else:
+                    # Produto existente: sempre atualiza preço/link/tipo do Supabase
+                    produto.preco         = float(p["price"])
+                    produto.nome          = p["title"]
+                    produto.link_download = p.get("link_pdf") or produto.link_download
+                    produto.tipo          = tipo_autoritativo
+                db.session.commit()
+        except Exception as e:
+            print(f"Erro ao sincronizar produto com Supabase: {e}")
+ 
+        if not produto:
+            return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
+ 
+        valor_original = produto.preco
+        valor_final = valor_original
+        cupom_obj = None
+ 
+        if cupom_id_recebido:
+            cupom_obj = Cupom.query.get(int(cupom_id_recebido))
+            if cupom_obj:
+                valido, _ = cupom_obj.esta_valido()
+                if valido and (cupom_obj.produto_id is None or cupom_obj.produto_id == int(product_id_recebido)):
+                    resultado = cupom_obj.calcular_desconto(valor_original)
+                    valor_final = resultado["valor_final"]
+                    cupom_obj.usos_atuais += 1
+                    db.session.add(cupom_obj)
+ 
+        # --- FRETE AUTORITATIVO (recotado no servidor; fallback = frete fixo) ---
+        is_fisico = (tipo_autoritativo == "fisico")
+        if is_fisico and frete_autoritativo is None:
+            return jsonify({"status": "error", "message": "Não foi possível calcular o frete agora. Tente novamente em instantes."}), 503
+        frete_servico_desc = None
+        if is_fisico:
+            _cep_destino = (dados.get("endereco") or {}).get("cep") or dados.get("cep_destino")
+            _servico_id  = dados.get("frete_servico_id")
+            frete_aplicado, frete_servico_desc = resolver_frete_fisico(
+                p_dados, _cep_destino, _servico_id, frete_autoritativo)
+        else:
+            frete_aplicado = 0.0
+        subtotal_produto = round(valor_final, 2)
+        total_cobrado    = round(subtotal_produto + frete_aplicado, 2)
+
+        descricao_correta = produto.nome
+        if cupom_obj:
+            descricao_correta += f" (Cupom: {cupom_obj.codigo})"
+        if frete_aplicado > 0:
+            descricao_correta += " + Frete"
+ 
+        # --- GERAÇÃO DO EXTERNAL_REFERENCE (CORRIGIDA) ---
+        import uuid
+        unique_id = str(uuid.uuid4())  # Identificador único para esta cobrança
+ 
+        # Define o external_reference conforme o produto
+        if usuario_id and int(product_id_recebido) == 7:  # produto de moedas
+            external_reference = f"{usuario_id}:{unique_id}"
+        else:
+            external_reference = unique_id
+ 
+        # --- CRIAÇÃO DO PAGAMENTO NO MERCADO PAGO ---
+        access_token = os.environ.get("MERCADOPAGO_ACCESS_TOKEN")
+        if not access_token:
+            return jsonify({"status": "error", "message": "Token do Mercado Pago não configurado."}), 500
+ 
+        sdk = mercadopago.SDK(access_token)
+ 
+        payment_data = {
+            "transaction_amount": total_cobrado,
+            "description": descricao_correta,
+            "payment_method_id": "pix",
+            "external_reference": external_reference,  # AGORA DEFINIDA
+            "payer": {
+                "email": email_cliente,
+            }
+        }
+ 
+        payment_response = sdk.payment().create(payment_data)
+        
+        if payment_response["status"] != 201:
+            error_msg = payment_response.get("response", {}).get("message", "Erro desconhecido do Mercado Pago")
+            return jsonify({"status": "error", "message": f"Erro do Mercado Pago: {error_msg}"}), 500
+            
+        payment = payment_response["response"]
+ 
+        qr_code_base64 = payment["point_of_interaction"]["transaction_data"]["qr_code_base64"]
+        qr_code_text = payment["point_of_interaction"]["transaction_data"]["qr_code"]
+ 
+        # --- CRIAÇÃO DA COBRANÇA NO BANCO (USA O MESMO external_reference) ---
+        import json as _json_mod
+        _endereco = dados.get("endereco") or {}
+        _obs = {}
+        if _endereco:
+            _obs["endereco"] = _endereco
+        if frete_aplicado > 0:
+            _obs["frete"] = frete_aplicado
+        if frete_servico_desc:
+            _obs["transportadora"] = frete_servico_desc
+        _obs["subtotal_produto"] = subtotal_produto
+
+        nova_cobranca = Cobranca(
+            external_reference=external_reference,  # MESMO VALOR ENVIADO AO MP
+            cliente_nome=nome_cliente,
+            cliente_email=email_cliente,
+            cliente_telefone=telefone_cliente,
+            valor=total_cobrado,
+            valor_original=round(valor_original, 2),
+            status=payment["status"],
+            product_id=produto.id,
+            vendedor_codigo=vendedor_codigo_recebido,
+            cupom_id=cupom_obj.id if cupom_obj else None,
+            observacoes=_json_mod.dumps(_obs) if _obs else None,
+        )
+        
+        cobranca_dict = nova_cobranca.to_dict()
+ 
+        db.session.add(nova_cobranca)
+        db.session.commit()
+        
+        # Prepara resposta
+        resposta = {
+            "status": "success",
+            "message": "Cobrança PIX criada com sucesso!",
+            "qr_code_base64": qr_code_base64,
+            "qr_code_text": qr_code_text,
+            "payment_id": payment["id"],
+            "cobranca": cobranca_dict,
+            "frete_aplicado": frete_aplicado,
+            "subtotal_produto": subtotal_produto,
+            "total_cobrado": total_cobrado
+        }
+        
+        if cupom_obj:
+            resposta["desconto_aplicado"] = {
+                "cupom_codigo": cupom_obj.codigo,
+                "tipo": cupom_obj.tipo,
+                "valor_desconto": round(valor_original - valor_final, 2),
+                "valor_original": round(valor_original, 2),
+                "valor_final": round(valor_final, 2)
+            }
+        
+        return jsonify(resposta), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"ERRO CRÍTICO GERAL (CREATE): {str(e)}")
+        return jsonify({"status": "error", "message": f"Falha ao criar cobrança: {str(e)}"}), 500
+
+
+# ROTA DE CONTATO
+@app.route("/api/contato", methods=["POST"])
+def handle_contact_form():
+    dados = request.get_json()
+    nome = dados.get("nome")
+    email_remetente = dados.get("email")
+    assunto = dados.get("assunto")
+    mensagem = dados.get("mensagem")
+ 
+    if not all([nome, email_remetente, assunto, mensagem]):
+        return jsonify({"status": "error", "message": "Todos os campos são obrigatórios."}), 400
+ 
+    try:
+        resend.api_key = os.environ.get("RESEND_API_KEY")
+        if not resend.api_key:
+             return jsonify({"status": "error", "message": "API de email não configurada."}), 500
+ 
+        params = {
+            "from": "BrooStore <onboarding@resend.dev>",
+            "to": "profalexleal@gmail.com",
+            "reply_to": email_remetente,
+            "subject": f"Contato BrooStore: {assunto}",
+            "html": f"<p>De: {nome} ({email_remetente})</p><hr><p>{mensagem}</p>"
+        }
+        
+        email = resend.Emails.send(params)
+        
+        if email.get("id"):
+            return jsonify({"status": "success", "message": "Mensagem enviada com sucesso!"}), 200
+        else:
+            return jsonify({"status": "error", "message": "Falha ao enviar e-mail."}), 500
+ 
+    except Exception as e:
+        print(f"[CONTACT FORM] ERRO RESEND: {e}")
+        return jsonify({"status": "error", "message": "Não foi possível enviar a mensagem no momento."}), 500
+ 
+ 
+# ROTA DE HEALTH CHECK
+ 
+@app.route("/api/sync-produto", methods=["POST"])
+def sync_produto():
+    """Sincroniza preço e dados de um produto da tabela products (Supabase) para produtos (local).
+    Chamado pelo painel do autor após salvar edições."""
+    dados = request.get_json(silent=True) or {}
+    product_id = dados.get("product_id")
+ 
+    if not product_id:
+        return jsonify({"status": "error", "message": "product_id obrigatório"}), 400
+ 
+    try:
+        sb_url = os.environ.get("SUPABASE_URL", "https://gyepvrzkwesohbagpgfa.supabase.co")
+        sb_key = os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd5ZXB2cnprd2Vzb2hiYWdwZ2ZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzMDk5OTAsImV4cCI6MjA3Njg4NTk5MH0.ePwzEE8FjikLiTyjbtJXUtIIwFRlaSf5RYe7iKMDnTA")
+        resp = http_requests.get(
+            f"{sb_url}/rest/v1/products?id=eq.{product_id}&select=id,title,price,link_pdf",
+            headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}"}
+        )
+        rows = resp.json()
+        if not rows:
+            return jsonify({"status": "error", "message": "Produto não encontrado no Supabase"}), 404
+ 
+        p = rows[0]
+        produto = db.session.get(Produto, int(p["id"]))
+        if produto:
+            produto.preco         = float(p["price"])
+            produto.nome          = p["title"]
+            produto.link_download = p.get("link_pdf") or produto.link_download
+        else:
+            produto = Produto(
+                id=p["id"],
+                nome=p["title"],
+                preco=float(p["price"]),
+                link_download=p.get("link_pdf") or "",
+                tipo="ebook"
+            )
+            db.session.add(produto)
+ 
+        db.session.commit()
+        print(f"[sync-produto] id={p['id']} nome={p['title']} preco={p['price']}")
+        return jsonify({"status": "ok", "preco": float(p["price"]), "nome": p["title"]})
+ 
+    except Exception as e:
+        print(f"[sync-produto] Erro: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+ 
+
+# ─────────────────────────────────────────────
+# PAGAMENTO COM CARTÃO DE CRÉDITO
+# ─────────────────────────────────────────────
+@app.route("/api/cobrancas-cartao", methods=["POST"])
+def create_cobranca_cartao():
+    try:
+        dados = request.get_json()
+        if not dados:
+            return jsonify({"status": "error", "message": "Nenhum dado enviado."}), 400
+
+        token           = dados.get("token")
+        payment_method  = dados.get("payment_method_id")
+        installments    = dados.get("installments", 1)
+        email_cliente   = dados.get("email")
+        nome_cliente    = dados.get("nome", "Cliente")
+        cpf_cliente     = dados.get("cpf", "")
+        product_id_rec  = dados.get("product_id")
+        cupom_id_rec    = dados.get("cupom_id")
+        issuer_id       = dados.get("issuer_id")
+        telefone_cliente = dados.get("telefone")
+
+        if not token:
+            return jsonify({"status": "error", "message": "Token do cartão é obrigatório."}), 400
+        if not email_cliente or "@" not in email_cliente:
+            return jsonify({"status": "error", "message": "E-mail inválido."}), 400
+        if not product_id_rec:
+            return jsonify({"status": "error", "message": "ID do produto é obrigatório."}), 400
+
+        # Busca/sincroniza produto
+        produto = db.session.get(Produto, int(product_id_rec))
+        frete_autoritativo = None
+        tipo_autoritativo  = produto.tipo if produto else None
+        p_dados            = {}  # dados fisicos do Supabase para recotacao de frete
+        try:
+            sb_url = os.environ.get("SUPABASE_URL", "https://gyepvrzkwesohbagpgfa.supabase.co")
+            sb_key = os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd5ZXB2cnprd2Vzb2hiYWdwZ2ZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzMDk5OTAsImV4cCI6MjA3Njg4NTk5MH0.ePwzEE8FjikLiTyjbtJXUtIIwFRlaSf5RYe7iKMDnTA")
+            resp = http_requests.get(
+                f"{sb_url}/rest/v1/products?id=eq.{product_id_rec}&select=id,title,price,link_pdf,frete,tipo,peso_kg,altura_cm,largura_cm,comprimento_cm",
+                headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}"}
+            )
+            rows = resp.json()
+            if rows:
+                p = rows[0]
+                tipo_autoritativo  = (p.get("tipo") or "ebook").strip().lower()
+                frete_autoritativo = float(p.get("frete") or 0)
+                p_dados = {
+                    "price": float(p.get("price") or 0),
+                    "peso_kg": p.get("peso_kg"), "altura_cm": p.get("altura_cm"),
+                    "largura_cm": p.get("largura_cm"), "comprimento_cm": p.get("comprimento_cm"),
+                }
+                if not produto:
+                    produto = Produto(id=p["id"], nome=p["title"], preco=float(p["price"]),
+                                      link_download=p.get("link_pdf") or "", tipo=tipo_autoritativo)
+                    db.session.add(produto)
+                else:
+                    produto.preco         = float(p["price"])
+                    produto.nome          = p["title"]
+                    produto.link_download = p.get("link_pdf") or produto.link_download
+                    produto.tipo          = tipo_autoritativo
+                db.session.commit()
+        except Exception as e:
+            print(f"[CARTAO] Erro ao sincronizar produto: {e}")
+
+        if not produto:
+            return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
+
+        valor_original = produto.preco
+        valor_final    = valor_original
+        cupom_obj      = None
+
+        if cupom_id_rec:
+            cupom_obj = Cupom.query.get(int(cupom_id_rec))
+            if cupom_obj:
+                valido, _ = cupom_obj.esta_valido()
+                if valido and (cupom_obj.produto_id is None or cupom_obj.produto_id == int(product_id_rec)):
+                    resultado   = cupom_obj.calcular_desconto(valor_original)
+                    valor_final = resultado["valor_final"]
+                    cupom_obj.usos_atuais += 1
+                    db.session.add(cupom_obj)
+
+        # --- FRETE AUTORITATIVO (recotado no servidor; fallback = frete fixo) ---
+        is_fisico = (tipo_autoritativo == "fisico")
+        if is_fisico and frete_autoritativo is None:
+            return jsonify({"status": "error", "message": "Não foi possível calcular o frete agora. Tente novamente em instantes."}), 503
+        frete_servico_desc = None
+        if is_fisico:
+            _cep_destino = (dados.get("endereco") or {}).get("cep") or dados.get("cep_destino")
+            _servico_id  = dados.get("frete_servico_id")
+            frete_aplicado, frete_servico_desc = resolver_frete_fisico(
+                p_dados, _cep_destino, _servico_id, frete_autoritativo)
+        else:
+            frete_aplicado = 0.0
+        subtotal_produto = round(valor_final, 2)
+        total_cobrado    = round(subtotal_produto + frete_aplicado, 2)
+
+        import uuid
+        external_reference = str(uuid.uuid4())
+
+        access_token = os.environ.get("MERCADOPAGO_ACCESS_TOKEN")
+        if not access_token:
+            return jsonify({"status": "error", "message": "Token do Mercado Pago não configurado."}), 500
+
+        sdk = mercadopago.SDK(access_token)
+
+        payment_data = {
+            "transaction_amount": total_cobrado,
+            "token":              token,
+            "description":        (produto.nome + " + Frete") if frete_aplicado > 0 else produto.nome,
+            "installments":       int(installments),
+            "payment_method_id":  payment_method,
+            "external_reference": external_reference,
+            "payer": {
+                "email": email_cliente,
+                "first_name": nome_cliente.split()[0] if nome_cliente else "Cliente",
+                "last_name":  " ".join(nome_cliente.split()[1:]) if len(nome_cliente.split()) > 1 else ".",
+                "identification": {
+                    "type":   "CPF",
+                    "number": cpf_cliente.replace(".", "").replace("-", "")
+                }
+            }
+        }
+        if issuer_id:
+            payment_data["issuer_id"] = int(issuer_id)
+
+        import uuid as _uuid
+        from mercadopago.config import RequestOptions
+        request_options = RequestOptions(custom_headers={"X-Idempotency-Key": str(_uuid.uuid4())})
+
+        payment_response = sdk.payment().create(payment_data, request_options)
+
+        print(f"[CARTAO] Resposta MP status={payment_response.get('status')} response={payment_response.get('response')}")
+
+        if payment_response["status"] not in [200, 201]:
+            resp_body = payment_response.get("response") or {}
+            error_msg = (
+                resp_body.get("message")
+                or resp_body.get("error")
+                or str(resp_body)
+                or "Erro desconhecido do Mercado Pago"
+            )
+            print(f"[CARTAO] ERRO MP completo: {payment_response}")
+            return jsonify({"status": "error", "message": f"Erro MP: {error_msg}"}), 500
+
+        payment    = payment_response["response"]
+        status_mp  = payment.get("status")
+        status_detail = payment.get("status_detail", "")
+
+        # Observações (endereço + frete para produto físico)
+        import json as _json_mod
+        _endereco = dados.get("endereco") or {}
+        _obs = {}
+        if _endereco:
+            _obs["endereco"] = _endereco
+        if frete_aplicado > 0:
+            _obs["frete"] = frete_aplicado
+        if frete_servico_desc:
+            _obs["transportadora"] = frete_servico_desc
+        _obs["subtotal_produto"] = subtotal_produto
+
+        nova_cobranca = Cobranca(
+            external_reference=external_reference,
+            cliente_nome=nome_cliente,
+            cliente_email=email_cliente,
+            cliente_telefone=telefone_cliente,
+            valor=total_cobrado,
+            valor_original=round(valor_original, 2),
+            status=status_mp,
+            product_id=produto.id,
+            cupom_id=cupom_obj.id if cupom_obj else None,
+            observacoes=_json_mod.dumps(_obs) if _obs else None,
+        )
+        db.session.add(nova_cobranca)
+        db.session.commit()
+
+        if status_mp == "approved":
+            try:
+                from rq import Queue as RQueue
+                rq = RQueue(connection=redis_conn)
+                rq.enqueue("worker.process_mercado_pago_webhook", payment["id"])
+            except Exception as _rq_err:
+                print(f"[CARTAO] Redis indisponível, webhook não enfileirado: {_rq_err}")
+            mensagem = "Pagamento aprovado! Você receberá o produto por e-mail em instantes."
+        elif status_mp == "in_process":
+            mensagem = "Pagamento em análise. Você receberá o produto assim que aprovado."
+        else:
+            mensagem = f"Pagamento não aprovado ({status_detail}). Verifique os dados do cartão."
+
+        resposta = {
+            "status":        status_mp,
+            "status_detail": status_detail,
+            "payment_id":    payment["id"],
+            "mensagem":      mensagem,
+            "frete_aplicado": frete_aplicado,
+            "subtotal_produto": subtotal_produto,
+            "total_cobrado": total_cobrado,
+        }
+        if cupom_obj:
+            resposta["desconto_aplicado"] = {
+                "cupom_codigo": cupom_obj.codigo,
+                "tipo": cupom_obj.tipo,
+                "valor_desconto": round(valor_original - valor_final, 2),
+                "valor_original": round(valor_original, 2),
+                "valor_final": round(valor_final, 2)
+            }
+
+        return jsonify(resposta), 201
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"ERRO CRÍTICO GERAL (CARTÃO): {str(e)}")
+        return jsonify({"status": "error", "message": f"Falha ao criar cobrança com cartão: {str(e)}"}), 500
+
+
+# ROTA DE RANKING / DASHBOARD
+@app.route("/api/ranking", methods=["GET"])
+def get_ranking():
+    try:
+        # Configurações de metas e comissões
+        META_VENDAS_DIA = 100
+        PRECO_BASE_EBOOK = 15.90
+        COMISSOES = {0: 0.15, 1: 0.10, 2: 0.05} 
+
+        with app.app_context():
+            vendas_entregues_query = db.session.query(
+                Cobranca.vendedor_codigo,
+                func.count(Cobranca.id).label('pontos')
+            ).filter(
+                Cobranca.status == 'delivered',
+                Cobranca.vendedor_codigo != None
+            ).group_by(
+                Cobranca.vendedor_codigo
+            ).subquery()
+ 
+            ranking_query = db.session.query(
+                Vendedor.nome_vendedor,
+                Vendedor.codigo_ranking,
+                func.coalesce(vendas_entregues_query.c.pontos, 0).label('pontos') 
+            ).outerjoin(
+                vendas_entregues_query,
+                Vendedor.codigo_ranking == vendas_entregues_query.c.vendedor_codigo
+            ).order_by(
+                func.coalesce(vendas_entregues_query.c.pontos, 0).desc() 
+            )
+            
+            ranking_db = ranking_query.all()
+ 
+            ranking_final = []
+            total_vendas_geral = 0
+ 
+            for i, (nome, codigo, pontos) in enumerate(ranking_db):
+                
+                total_vendas_geral += pontos
+                valor_vendido_bruto = pontos * PRECO_BASE_EBOOK
+                
+                percentual_comissao = COMISSOES.get(i, 0)
+                valor_comissao_calculado = valor_vendido_bruto * percentual_comissao
+                
+                ranking_final.append({
+                    "rank": i + 1,
+                    "nome": nome,
+                    "codigo": codigo,
+                    "pontos": pontos,
+                    "valor_comissao_brl": f"R$ {valor_comissao_calculado:,.2f}",
+                    "percentual_comissao": f"{percentual_comissao * 100:.0f}%"
+                })
+ 
+            meta = {
+                "objetivo": META_VENDAS_DIA,
+                "atual": total_vendas_geral,
+                "percentual_meta": min((total_vendas_geral / META_VENDAS_DIA) * 100, 100)
+            }
+ 
+            return jsonify({
+                "status": "success",
+                "ranking": ranking_final,
+                "meta_diaria": meta
+            }), 200
+ 
+    except Exception as e:
+        db.session.rollback()
+        print(f"ERRO CRÍTICO (RANKING): {str(e)}")
+        return jsonify({"status": "error", "message": f"Erro interno ao calcular ranking: {str(e)}"}), 500
+ 
+ 
+
+
+# ═══════════════════════════════════════════════════════════
+# COMPRESSOR DE PDF — validação de código + compressão
+# ═══════════════════════════════════════════════════════════
+
+@app.route("/api/validar-codigo-compressao", methods=["POST"])
+def validar_codigo_compressao():
+    """Verifica se o external_reference corresponde a um pagamento
+    aprovado do produto 99 (compressão de PDF)."""
+    try:
+        dados  = request.get_json()
+        codigo = (dados.get("codigo") or "").strip()
+        if not codigo:
+            return jsonify({"status": "erro", "message": "Código não informado."}), 400
+
+        from sqlalchemy import or_
+        cobranca = Cobranca.query.filter(
+            Cobranca.external_reference == codigo,
+            or_(Cobranca.status == "approved", Cobranca.status == "delivered")
+        ).first()
+
+        if not cobranca:
+            return jsonify({"status": "erro",
+                            "message": "Código inválido ou pagamento ainda não confirmado."}), 404
+
+        # Garante que é realmente uma cobrança de compressão de PDF
+        if cobranca.product_id not in [99, None]:
+            return jsonify({"status": "erro",
+                            "message": "Código inválido para este serviço."}), 400
+
+        # Verifica se o código já foi usado para uma compressão
+        if getattr(cobranca, "compressao_usada", False):
+            return jsonify({"status": "erro",
+                            "message": "Este código já foi utilizado."}), 400
+
+        return jsonify({"status": "ok", "message": "Código válido."}), 200
+
+    except Exception as e:
+        print(f"ERRO validar_codigo_compressao: {e}")
+        return jsonify({"status": "erro", "message": str(e)}), 500
+
+
+@app.route("/api/comprimir-pdf", methods=["POST", "OPTIONS"])
+def comprimir_pdf():
+    """Recebe o PDF e o código de liberação, comprime e devolve o arquivo."""
+    import subprocess, tempfile, os as _os
+
+    try:
+        codigo = (request.form.get("codigo") or "").strip()
+        pdf    = request.files.get("pdf")
+
+        if not codigo:
+            return jsonify({"status": "erro", "message": "Código não informado."}), 400
+        if not pdf:
+            return jsonify({"status": "erro", "message": "Nenhum arquivo enviado."}), 400
+
+        # Valida código novamente (segurança)
+        from sqlalchemy import or_ as _or
+        cobranca = Cobranca.query.filter(
+            Cobranca.external_reference == codigo,
+            _or(Cobranca.status == "approved", Cobranca.status == "delivered")
+        ).first()
+
+        if not cobranca or cobranca.product_id not in [99, None]:
+            return jsonify({"status": "erro",
+                            "message": "Código inválido ou pagamento não confirmado."}), 403
+
+        if getattr(cobranca, "compressao_usada", False):
+            return jsonify({"status": "erro",
+                            "message": "Este código já foi utilizado."}), 400
+
+        # Salva o PDF recebido em arquivo temporário
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_in:
+            pdf.save(tmp_in.name)
+            tmp_in_path = tmp_in.name
+
+        tmp_out_path = tmp_in_path.replace(".pdf", "_out.pdf")
+
+        try:
+            import pikepdf
+
+            # Usa pikepdf — leve e eficiente no plano free (512MB RAM)
+            print("[COMPRIMIR] Comprimindo com pikepdf...")
+            with pikepdf.open(tmp_in_path) as pdf:
+                pdf.save(
+                    tmp_out_path,
+                    compress_streams=True,
+                    object_stream_mode=pikepdf.ObjectStreamMode.generate,
+                    linearize=True
+                )
+            if not _os.path.exists(tmp_out_path):
+                raise Exception("Falha ao gerar o arquivo comprimido.")
+            print(f"[COMPRIMIR] ✅ Concluído.")
+
+            # Marca código como usado
+            try:
+                cobranca.compressao_usada = True
+                db.session.commit()
+            except Exception:
+                pass  # campo pode não existir ainda; não bloqueia a entrega
+
+            # Retorna o PDF comprimido
+            from flask import send_file
+            return send_file(
+                tmp_out_path,
+                mimetype="application/pdf",
+                as_attachment=True,
+                download_name="comprimido.pdf"
+            )
+
+        finally:
+            for p in [tmp_in_path]:
+                try: _os.unlink(p)
+                except: pass
+
+    except Exception as e:
+        print(f"ERRO comprimir_pdf: {e}")
+        return jsonify({"status": "erro", "message": str(e)}), 500
+
+
+
+# ═══════════════════════════════════════════════════════════
+# COMPRESSOR DE IMAGENS — validação de código + compressão
+# ═══════════════════════════════════════════════════════════
+
+FORMATOS_ACEITOS_IMAGEM = {"image/jpeg", "image/png", "image/webp"}
+EXTENSOES_ACEITAS_IMAGEM = {".jpg", ".jpeg", ".png", ".webp"}
+
+def _comprimir_imagem_bytes(file_storage, qualidade=82, max_px=1920, alvo_kb=900):
+    """Redimensiona e comprime uma imagem para JPEG, respeitando alvo_kb."""
+    from PIL import Image
+    import io, os as _os
+
+    img = Image.open(file_storage)
+
+    # Converte modos especiais para RGB (ex: RGBA, P)
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
+    # Redimensiona mantendo proporção se maior que max_px
+    img.thumbnail((max_px, max_px), Image.LANCZOS)
+
+    # Tenta qualidade desejada; reduz até ficar abaixo do alvo
+    for q in [qualidade, 75, 65, 55]:
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=q, optimize=True, progressive=True)
+        tamanho_kb = buf.tell() / 1024
+        if tamanho_kb <= alvo_kb:
+            break
+
+    buf.seek(0)
+    return buf, tamanho_kb
+
+
+@app.route("/api/validar-codigo-compressao-imagem", methods=["POST"])
+def validar_codigo_compressao_imagem():
+    """Verifica se o external_reference é válido para o serviço de compressão de imagens (produto 98)."""
+    try:
+        dados  = request.get_json()
+        codigo = (dados.get("codigo") or "").strip()
+        if not codigo:
+            return jsonify({"status": "erro", "message": "Código não informado."}), 400
+
+        from sqlalchemy import or_
+        cobranca = Cobranca.query.filter(
+            Cobranca.external_reference == codigo,
+            or_(Cobranca.status == "approved", Cobranca.status == "delivered")
+        ).first()
+
+        if not cobranca:
+            return jsonify({"status": "erro",
+                            "message": "Código inválido ou pagamento ainda não confirmado."}), 404
+
+        if cobranca.product_id not in [98, None]:
+            return jsonify({"status": "erro",
+                            "message": "Código inválido para este serviço."}), 400
+
+        if getattr(cobranca, "compressao_img_usada", False):
+            return jsonify({"status": "erro",
+                            "message": "Este código já foi utilizado."}), 400
+
+        return jsonify({"status": "ok", "message": "Código válido."}), 200
+
+    except Exception as e:
+        print(f"ERRO validar_codigo_compressao_imagem: {e}")
+        return jsonify({"status": "erro", "message": str(e)}), 500
+
+
+@app.route("/api/comprimir-imagem", methods=["POST", "OPTIONS"])
+def comprimir_imagem():
+    """Recebe uma imagem (JPEG/PNG/WebP) e o código de liberação,
+    comprime para JPEG ≤ 900 KB e devolve o arquivo."""
+    import os as _os
+
+    try:
+        codigo  = (request.form.get("codigo") or "").strip()
+        imagem  = request.files.get("imagem")
+
+        if not codigo:
+            return jsonify({"status": "erro", "message": "Código não informado."}), 400
+        if not imagem:
+            return jsonify({"status": "erro", "message": "Nenhuma imagem enviada."}), 400
+
+        # Valida tipo de arquivo
+        import os.path as _osp
+        ext = _osp.splitext(imagem.filename or "")[1].lower()
+        if imagem.mimetype not in FORMATOS_ACEITOS_IMAGEM and ext not in EXTENSOES_ACEITAS_IMAGEM:
+            return jsonify({"status": "erro",
+                            "message": "Formato não suportado. Use JPEG, PNG ou WebP."}), 400
+
+        # Valida código (segurança)
+        from sqlalchemy import or_ as _or
+        cobranca = Cobranca.query.filter(
+            Cobranca.external_reference == codigo,
+            _or(Cobranca.status == "approved", Cobranca.status == "delivered")
+        ).first()
+
+        if not cobranca or cobranca.product_id not in [98, None]:
+            return jsonify({"status": "erro",
+                            "message": "Código inválido ou pagamento não confirmado."}), 403
+
+        if getattr(cobranca, "compressao_img_usada", False):
+            return jsonify({"status": "erro",
+                            "message": "Este código já foi utilizado."}), 400
+
+        # Comprime
+        print(f"[COMPRIMIR-IMG] Comprimindo '{imagem.filename}'...")
+        buf, tamanho_kb = _comprimir_imagem_bytes(imagem)
+        print(f"[COMPRIMIR-IMG] ✅ Resultado: {tamanho_kb:.0f} KB")
+
+        # Marca código como usado
+        try:
+            cobranca.compressao_img_usada = True
+            db.session.commit()
+        except Exception:
+            pass  # campo pode não existir ainda; não bloqueia a entrega
+
+        from flask import send_file
+        return send_file(
+            buf,
+            mimetype="image/jpeg",
+            as_attachment=True,
+            download_name="imagem_comprimida.jpg"
+        )
+
+    except Exception as e:
+        print(f"ERRO comprimir_imagem: {e}")
+        return jsonify({"status": "erro", "message": str(e)}), 500
+
+# ═══════════════════════════════════════════════════════════
+# COTAÇÃO DE FRETE — Melhor Envio (Fase 2)
+# ═══════════════════════════════════════════════════════════
+MELHOR_ENVIO_URL   = os.environ.get("MELHOR_ENVIO_URL", "https://www.melhorenvio.com.br/api/v2")
+MELHOR_ENVIO_TOKEN = os.environ.get("MELHOR_ENVIO_TOKEN", "")
+MELHOR_ENVIO_EMAIL = os.environ.get("MELHOR_ENVIO_EMAIL", "entrega.broo@zohomail.com")
+CEP_ORIGEM         = os.environ.get("CEP_ORIGEM", "")
+
+
+def _so_digitos(cep):
+    return "".join(filter(str.isdigit, cep or ""))
+
+
+def cotar_frete_melhor_envio(cep_destino, peso_kg, altura_cm, largura_cm,
+                             comprimento_cm, valor_segurado=0.0):
+    """Consulta o Melhor Envio e retorna (opcoes, erro).
+    opcoes = lista de {id, nome, empresa, preco, prazo}; erro = None ou mensagem."""
+    if not MELHOR_ENVIO_TOKEN:
+        return None, "MELHOR_ENVIO_TOKEN não configurado no servidor."
+    if not CEP_ORIGEM:
+        return None, "CEP_ORIGEM não configurado no servidor."
+
+    cep_o = _so_digitos(CEP_ORIGEM)
+    cep_d = _so_digitos(cep_destino)
+    if len(cep_d) != 8:
+        return None, "CEP de destino inválido."
+
+    payload = {
+        "from": {"postal_code": cep_o},
+        "to":   {"postal_code": cep_d},
+        "package": {
+            "weight": float(peso_kg or 0.3),
+            "width":  float(largura_cm or 11),
+            "height": float(altura_cm or 2),
+            "length": float(comprimento_cm or 16),
+        },
+        "options": {
+            "insurance_value": float(valor_segurado or 0),
+            "receipt": False,
+            "own_hand": False,
+        },
+    }
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {MELHOR_ENVIO_TOKEN}",
+        "User-Agent": f"BrooStore ({MELHOR_ENVIO_EMAIL})",
+    }
+
+    try:
+        resp = http_requests.post(
+            f"{MELHOR_ENVIO_URL}/me/shipment/calculate",
+            json=payload, headers=headers, timeout=15
+        )
+    except Exception as e:
+        return None, f"Falha ao consultar Melhor Envio: {e}"
+
+    if resp.status_code == 401:
+        return None, "Token do Melhor Envio inválido ou expirado (401)."
+    if resp.status_code == 403:
+        return None, "Token sem a permissão de cotação 'shipping-calculate' (403)."
+    if resp.status_code != 200:
+        return None, f"Melhor Envio respondeu {resp.status_code}: {resp.text[:200]}"
+
+    try:
+        dados = resp.json()
+    except Exception:
+        return None, "Resposta inválida do Melhor Envio."
+
+    opcoes = []
+    for item in dados:
+        # Pula serviços indisponíveis (vêm com 'error' e sem 'price')
+        if item.get("error") or not item.get("price"):
+            continue
+        try:
+            preco = round(float(item["price"]), 2)
+        except (TypeError, ValueError):
+            continue
+        opcoes.append({
+            "id":      item.get("id"),
+            "nome":    item.get("name", ""),
+            "empresa": (item.get("company") or {}).get("name", ""),
+            "preco":   preco,
+            "prazo":   item.get("delivery_time"),
+        })
+
+    # Log de depuração: peso real vs cúbico
+    try:
+        pk = payload["package"]
+        cubico = round((pk["height"] * pk["width"] * pk["length"]) / 6000.0, 3)
+        print(f"[FRETE] origem={cep_o} destino={cep_d} peso_real={pk['weight']}kg "
+              f"peso_cubico~{cubico}kg -> {len(opcoes)} opcoes")
+    except Exception:
+        pass
+
+    return opcoes, None
+
+
+def resolver_frete_fisico(p_supabase, cep_destino, servico_id, frete_fixo_fallback):
+    """Produto fisico: recota no Melhor Envio e devolve o preco do servico escolhido.
+    Cai no frete fixo (fallback) se nao der para cotar. Retorna (frete, descricao_servico)."""
+    fallback = round(float(frete_fixo_fallback or 0), 2)
+    dims_ok = all(p_supabase.get(c) for c in ("peso_kg", "altura_cm", "largura_cm", "comprimento_cm"))
+    if not (servico_id and cep_destino and dims_ok):
+        return fallback, None
+    opcoes, erro = cotar_frete_melhor_envio(
+        cep_destino=cep_destino,
+        peso_kg=p_supabase["peso_kg"], altura_cm=p_supabase["altura_cm"],
+        largura_cm=p_supabase["largura_cm"], comprimento_cm=p_supabase["comprimento_cm"],
+        valor_segurado=float(p_supabase.get("price") or 0),
+    )
+    if erro or not opcoes:
+        print(f"[FRETE] recotacao indisponivel ({erro}); usando frete fixo R$ {fallback}")
+        return fallback, None
+    escolhido = next((o for o in opcoes if str(o["id"]) == str(servico_id)), None)
+    if not escolhido:
+        print(f"[FRETE] servico_id {servico_id} nao encontrado; usando frete fixo R$ {fallback}")
+        return fallback, None
+    return round(float(escolhido["preco"]), 2), f"{escolhido['empresa']} {escolhido['nome']}"
+
+
+def curar_opcoes(opcoes):
+    """Seleciona ate 3 opcoes por custo-beneficio: mais barata, melhor equilibrio e mais rapida."""
+    if not opcoes:
+        return []
+    FATOR_DIA = 2.0
+    barata = min(opcoes, key=lambda o: (o["preco"], o["prazo"] or 999))
+    rapida = min(opcoes, key=lambda o: (o["prazo"] or 999, o["preco"]))
+    score  = lambda o: o["preco"] + (o["prazo"] or 0) * FATOR_DIA
+    ids = {barata["id"], rapida["id"]}
+    restantes = [o for o in opcoes if o["id"] not in ids]
+    equilibrio = min(restantes, key=score) if restantes else None
+    selecionadas = []
+    def _add(o, tag):
+        if o and all(x["id"] != o["id"] for x in selecionadas):
+            o2 = dict(o); o2["destaque"] = tag
+            selecionadas.append(o2)
+    _add(barata, "Mais barato")
+    _add(equilibrio, "Custo-beneficio")
+    _add(rapida, "Mais rapido")
+    for o in opcoes:
+        if len(selecionadas) >= 3:
+            break
+        _add(o, "")
+    selecionadas.sort(key=lambda o: o["preco"])
+    return selecionadas[:3]
+
+
+@app.route("/api/cotar-frete", methods=["POST"])
+def cotar_frete():
+    try:
+        dados       = request.get_json() or {}
+        cep_destino = dados.get("cep_destino") or dados.get("cep")
+        product_id  = dados.get("product_id")
+
+        if not cep_destino:
+            return jsonify({"status": "error", "message": "CEP de destino obrigatório."}), 400
+        if not product_id:
+            return jsonify({"status": "error", "message": "product_id obrigatório."}), 400
+
+        # Busca dados físicos do produto no Supabase (fonte da verdade)
+        sb_url = os.environ.get("SUPABASE_URL", "https://gyepvrzkwesohbagpgfa.supabase.co")
+        sb_key = os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd5ZXB2cnprd2Vzb2hiYWdwZ2ZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzMDk5OTAsImV4cCI6MjA3Njg4NTk5MH0.ePwzEE8FjikLiTyjbtJXUtIIwFRlaSf5RYe7iKMDnTA")
+        try:
+            resp = http_requests.get(
+                f"{sb_url}/rest/v1/products?id=eq.{product_id}"
+                f"&select=id,price,tipo,peso_kg,altura_cm,largura_cm,comprimento_cm",
+                headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}"},
+                timeout=10
+            )
+            rows = resp.json()
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Erro ao buscar produto: {e}"}), 500
+
+        if not rows:
+            return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
+
+        p = rows[0]
+        if (p.get("tipo") or "").strip().lower() != "fisico":
+            return jsonify({"status": "error", "message": "Produto não é físico (não tem frete)."}), 400
+
+        faltando = [c for c in ("peso_kg", "altura_cm", "largura_cm", "comprimento_cm") if not p.get(c)]
+        if faltando:
+            return jsonify({"status": "error",
+                            "message": f"Produto sem medidas cadastradas: {', '.join(faltando)}."}), 422
+
+        opcoes, erro = cotar_frete_melhor_envio(
+            cep_destino=cep_destino,
+            peso_kg=p["peso_kg"],
+            altura_cm=p["altura_cm"],
+            largura_cm=p["largura_cm"],
+            comprimento_cm=p["comprimento_cm"],
+            valor_segurado=float(p.get("price") or 0),
+        )
+        if erro:
+            return jsonify({"status": "error", "message": erro}), 502
+        if not opcoes:
+            return jsonify({"status": "error",
+                            "message": "Nenhuma transportadora disponível para este CEP."}), 404
+
+        opcoes.sort(key=lambda o: o["preco"])
+        opcoes_curadas = curar_opcoes(opcoes)
+        return jsonify({"status": "success",
+                        "opcoes": opcoes_curadas,
+                        "total_disponivel": len(opcoes)}), 200
+
+    except Exception as e:
+        print(f"ERRO (COTAR FRETE): {str(e)}")
+        return jsonify({"status": "error", "message": f"Erro ao cotar frete: {str(e)}"}), 500
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)

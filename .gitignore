@@ -1,0 +1,23 @@
+# dependencias / build
+node_modules/
+dist/
+.vite/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.coverage
+*.egg-info/
+
+# segredos e ambiente local (NUNCA commitar)
+.env
+.env.*
+!.env.example
+
+# banco local de teste e arquivos de editor
+*.db
+*.sqlite
+.DS_Store
+.idea/
+.vscode/

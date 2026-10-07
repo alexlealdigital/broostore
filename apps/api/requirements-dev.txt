@@ -1,0 +1,6 @@
+# Dependências de desenvolvimento/teste (NÃO usadas no deploy do Render).
+-r requirements.txt
+pytest>=8
+fakeredis>=2.20
+ruff
+pyflakes

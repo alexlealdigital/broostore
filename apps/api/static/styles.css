@@ -1,0 +1,177 @@
+/* =========================================================
+   4. MODO SPOTLIGHT (ESTILO NETFLIX / CINEMA)
+   ========================================================= */
+
+#spotlight-container {
+    display: none; /* O JS ativa isso */
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 1500;
+    background-color: #000;
+    overflow-y: auto; /* Permite rolar se a tela for pequena */
+}
+
+/* O Wrapper agora ocupa a tela toda */
+.spotlight-wrapper {
+    display: flex;
+    width: 100%;
+    min-height: 100vh;
+    position: relative;
+    background: #000;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+/* A Imagem vira um "Background" lateral gigante */
+.spotlight-image {
+    flex: 1.5; /* Ocupa mais espaço */
+    position: relative;
+    padding: 0;
+    background: #000;
+    order: 2; /* Joga a imagem para a direita em telas grandes */
+    overflow: hidden;
+}
+
+.spotlight-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Cobre a área toda como um poster de filme */
+    object-position: center top;
+    opacity: 0.6; /* Escurece a imagem para dar clima */
+    mask-image: linear-gradient(to right, transparent 0%, black 20%); /* Fusão suave com o texto */
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 20%);
+    transition: transform 10s ease; /* Efeito Ken Burns suave */
+}
+
+/* Animação lenta na imagem */
+.spotlight-wrapper:hover .spotlight-image img {
+    transform: scale(1.1);
+}
+
+/* Área de Texto (Esquerda) */
+.spotlight-details {
+    flex: 1;
+    padding: 4rem 2rem 4rem 5%; /* Espaçamento generoso na esquerda */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background: linear-gradient(90deg, #000 0%, #0a0a0a 100%);
+    z-index: 10;
+    order: 1;
+    box-shadow: 20px 0 50px #000; /* Sombra para fundir com a imagem */
+}
+
+.spotlight-tag {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: var(--success-green);
+    padding: 0.5rem 1rem;
+    letter-spacing: 2px;
+    font-size: 0.8rem;
+    margin-bottom: 1.5rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.spotlight-tag::before { content: '●'; font-size: 1.2em; } /* Bolinha verde */
+
+.spotlight-title {
+    font-size: clamp(2.5rem, 6vw, 4.5rem); /* Título GIGANTE responsivo */
+    line-height: 1;
+    margin-bottom: 1.5rem;
+    background: linear-gradient(to bottom, #fff 0%, #ccc 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.spotlight-desc {
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: #a8a8a8;
+    max-width: 600px;
+    margin-bottom: 2.5rem;
+    border-left: 3px solid var(--orange-web);
+    padding-left: 1rem;
+}
+
+.spotlight-price {
+    font-size: 3rem;
+    color: #fff;
+    font-weight: 300;
+    margin-bottom: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+.spotlight-price span { /* O valor numérico */
+    font-weight: 700;
+    color: var(--success-green);
+}
+
+/* Botão Estilo "Assistir Agora" */
+.spotlight-btn {
+    background-color: var(--orange-web); /* Laranja da sua marca */
+    color: #000;
+    font-size: 1.2rem;
+    font-weight: 800;
+    padding: 1.2rem 2.5rem;
+    border-radius: 4px; /* Bordas retas estilo Netflix */
+    border: none;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.3s ease;
+    align-self: flex-start;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.spotlight-btn:hover {
+    background-color: #fff;
+    transform: scale(1.05);
+    box-shadow: 0 0 30px rgba(255, 255, 255, 0.2);
+}
+
+.spotlight-btn i { font-size: 1.4rem; }
+
+/* Link de voltar discreto */
+#spotlight-container a {
+    margin-top: 2rem;
+    color: #666;
+    font-size: 0.9rem;
+    transition: color 0.3s;
+    display: inline-block;
+}
+#spotlight-container a:hover { color: #fff; text-decoration: none; }
+
+/* --- Responsividade Mobile (Estilo Poster) --- */
+@media (max-width: 768px) {
+    .spotlight-wrapper {
+        flex-direction: column;
+    }
+    
+    .spotlight-image {
+        order: 1;
+        flex: 0 0 50vh; /* Imagem ocupa 50% da altura no celular */
+        mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+        -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+    }
+    
+    .spotlight-image img { opacity: 0.8; }
+
+    .spotlight-details {
+        order: 2;
+        padding: 1rem 1.5rem 4rem;
+        background: transparent; /* Fundo transparente para ver a imagem atrás */
+        margin-top: -10vh; /* Sobe o texto para cima da imagem */
+        text-align: center;
+        align-items: center;
+    }
+
+    .spotlight-desc { border-left: none; padding-left: 0; font-size: 1rem; }
+    .spotlight-title { font-size: 2.5rem; }
+    .spotlight-btn { width: 100%; justify-content: center; }
+}

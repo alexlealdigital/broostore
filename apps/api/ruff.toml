@@ -1,0 +1,9 @@
+# Lint mínimo: erros de sintaxe e imports/variáveis não usados (pyflakes).
+line-length = 140
+extend-exclude = ["static", "tests/golden/original"]
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
+
+[lint.per-file-ignores]
+"scripts/*.py" = ["E402"]

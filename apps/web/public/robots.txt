@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /comprar
+
+# Sitemap: https://SEU-DOMINIO/sitemap.xml

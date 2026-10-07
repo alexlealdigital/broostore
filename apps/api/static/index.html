@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Broo Store - Store</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <style>
+        /* =========================================================
+           1. CONFIGURAÇÕES GLOBAIS
+           ========================================================= */
+        :root {
+            --black: #000000;
+            --oxford-blue: #14213d;
+            --orange-web: #fca311;
+            --platinum: #e5e5e5;
+            --white: #ffffff;
+            --success-green: #27ae60;
+            --error-red: #e74c3c;
+            --border-grey: #333333;
+            --font-heading: 'Poppins', sans-serif;
+            --font-body: 'Lato', sans-serif;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body { 
+            font-family: var(--font-body); 
+            background-color: var(--black); 
+            color: var(--white); 
+            overflow-x: hidden;
+        }
+
+        a { text-decoration: none; color: inherit; transition: 0.3s; }
+        ul { list-style: none; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #111; }
+        ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--orange-web); }
+
+        /* =========================================================
+           2. COMPONENTES
+           ========================================================= */
+        /* Botão Voltar */
+        .back-button {
+            position: fixed; top: 2rem; left: 2rem; z-index: 999;
+            background-color: rgba(20, 33, 61, 0.8);
+            backdrop-filter: blur(5px);
+            color: var(--orange-web);
+            width: 45px; height: 45px;
+            border-radius: 50%;
+            border: 2px solid var(--orange-web);
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            transition: all 0.3s ease;
+        }
+        .back-button:hover { transform: scale(1.1); background-color: var(--orange-web); color: var(--black); }
+
+        /* Botão CTA */
+        .cta-button {
+            width: 100%; padding: 0.8rem; border: none; border-radius: 5px;
+            background-color: var(--orange-web); color: var(--black);
+            font-weight: bold; font-family: var(--font-heading); cursor: pointer;
+            transition: all 0.3s ease; text-transform: uppercase; letter-spacing: 1px;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .cta-button:hover { background-color: #ffb700; transform: translateY(-2px); }
+
+        /* Utilitários */
+        .hidden { display: none !important; }
+        .container { width: 90%; max-width: 1200px; margin: 0 auto; }
+        .section { padding: 4rem 5%; }
+        .section-title { 
+            font-family: var(--font-heading); font-size: clamp(2rem, 5vw, 3rem); 
+            text-align: center; margin-bottom: 3rem; 
+        }
+        .portal-dot { color: var(--orange-web); }
+
+        /* =========================================================
+           3. ESTANTE (GRID)
+           ========================================================= */
+        .bookshelf-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); 
+            gap: 2rem; 
+        }
+
+        .book-card { 
+            background-color: var(--oxford-blue); border-radius: 10px; overflow: hidden; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3); transition: transform 0.3s ease; 
+            display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.05);
+        }
+        .book-card:hover { transform: translateY(-8px); box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+
+        .book-cover { 
+            width: 100%; height: 300px; object-fit: contain; background: #0a1120; 
+            border-bottom: 2px solid var(--orange-web); padding: 10px;
+        }
+
+        .book-info { padding: 1.5rem; display: flex; flex-direction: column; flex-grow: 1; }
+        .book-info h3 { font-family: var(--font-heading); font-size: 1.1rem; margin-bottom: 0.5rem; line-height: 1.4; }
+        .book-description { font-size: 0.9rem; color: var(--platinum); margin-bottom: 1rem; flex-grow: 1; opacity: 0.8; }
+        .book-price { font-size: 1.4rem; color: var(--orange-web); font-weight: bold; margin-bottom: 1rem; font-family: var(--font-heading); }
+
+        /* =========================================================
+           4. MODO SPOTLIGHT (Página Focada)
+           ========================================================= */
+        #spotlight-container {
+            display: none; min-height: 100vh;
+            align-items: center; justify-content: center;
+            background: radial-gradient(circle at center, #1a2c50 0%, #000000 100%);
+            padding: 2rem;
+        }
+
+        .spotlight-wrapper {
+            display: flex; flex-direction: column;
+            background: rgba(20, 33, 61, 0.7); backdrop-filter: blur(15px);
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 20px;
+            overflow: hidden; max-width: 1100px; width: 100%;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.6);
+        }
+
+        .spotlight-image {
+            flex: 1; background: rgba(0,0,0,0.3);
+            display: flex; align-items: center; justify-content: center;
+            padding: 3rem; border-right: 1px solid rgba(255,255,255,0.05);
+        }
+        .spotlight-image img {
+            max-width: 100%; max-height: 450px; object-fit: contain;
+            filter: drop-shadow(0 15px 30px rgba(0,0,0,0.5)); transition: transform 0.5s ease;
+        }
+        .spotlight-image img:hover { transform: scale(1.05) rotate(2deg); }
+
+        /* Dados físicos no spotlight */
+        #spot-fisico-wrap {
+            display: none;
+            margin: 1rem 0;
+            background: rgba(252,163,17,.07);
+            border: 1px solid rgba(252,163,17,.2);
+            border-radius: 10px;
+            padding: .9rem 1.1rem;
+        }
+        .spot-fisico-item {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            font-size: .88rem;
+            color: #ccc;
+            padding: .2rem 0;
+        }
+        .spot-fisico-item i { color: var(--orange-web); width: 16px; text-align: center; }
+        .spot-specs {
+            margin-top: .75rem;
+            padding-top: .75rem;
+            border-top: 1px solid rgba(255,255,255,.08);
+            font-size: .85rem;
+            color: #bbb;
+            line-height: 1.6;
+        }
+        .spot-specs strong { color: var(--orange-web); display: block; margin-bottom: .3rem; }
+
+        /* Carrossel de fotos físico */
+        .carrossel-wrap {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: .75rem;
+        }
+        .carrossel-main {
+            position: relative;
+            width: 100%;
+            max-height: 420px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .carrossel-main img {
+            max-width: 100%;
+            max-height: 420px;
+            object-fit: contain;
+            border-radius: 10px;
+            filter: drop-shadow(0 10px 25px rgba(0,0,0,.5));
+            transition: opacity .3s;
+        }
+        .carr-arrow {
+            position: absolute;
+            top: 50%; transform: translateY(-50%);
+            background: rgba(0,0,0,.55);
+            border: none; border-radius: 50%;
+            width: 36px; height: 36px;
+            color: #fff; font-size: 1rem;
+            cursor: pointer; display: flex;
+            align-items: center; justify-content: center;
+            transition: background .2s; z-index: 2;
+        }
+        .carr-arrow:hover { background: var(--orange-web); color: #000; }
+        .carr-prev { left: 6px; }
+        .carr-next { right: 6px; }
+        .carrossel-thumbs {
+            display: flex;
+            gap: .4rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .carr-thumb {
+            width: 52px; height: 52px;
+            object-fit: cover;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            opacity: .6;
+            transition: all .2s;
+        }
+        .carr-thumb.active, .carr-thumb:hover {
+            border-color: var(--orange-web);
+            opacity: 1;
+        }
+
+        .spotlight-details { flex: 1; padding: 3rem; display: flex; flex-direction: column; justify-content: center; }
+        
+        .spotlight-tag {
+            display: inline-block; background: var(--orange-web); color: var(--black);
+            padding: 0.4rem 1.2rem; border-radius: 50px; font-size: 0.85rem; font-weight: 800;
+            text-transform: uppercase; align-self: flex-start; margin-bottom: 1.5rem; letter-spacing: 1px;
+        }
+        .spotlight-title { font-family: var(--font-heading); font-size: 2.8rem; line-height: 1.1; margin-bottom: 1.5rem; }
+        .spotlight-desc { font-size: 1.1rem; color: var(--platinum); line-height: 1.6; margin-bottom: 2rem; opacity: 0.9; }
+        .spotlight-price { 
+            font-size: 3.5rem; color: var(--success-green); font-weight: 700; 
+            margin-bottom: 2.5rem; font-family: var(--font-heading); 
+            text-shadow: 0 0 20px rgba(39, 174, 96, 0.3); 
+        }
+
+        .spotlight-btn {
+            background: var(--success-green); color: white; font-size: 1.3rem; padding: 1.2rem;
+            border: none; border-radius: 8px; cursor: pointer; font-family: var(--font-heading);
+            font-weight: bold; transition: all 0.3s; box-shadow: 0 0 20px rgba(39, 174, 96, 0.4);
+            text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 12px;
+        }
+        .spotlight-btn:hover { background: #2ecc71; transform: translateY(-3px); box-shadow: 0 10px 40px rgba(39, 174, 96, 0.6); }
+
+        /* =========================================================
+           5. MODAL CHECKOUT
+           ========================================================= */
+        .modal { 
+            display: none; position: fixed; z-index: 2000; left: 0; top: 0; 
+            width: 100%; height: 100%; background-color: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
+            animation: fadeIn 0.3s;
+            overflow-y: auto;
+        }
+        @keyframes fadeIn { from {opacity:0;} to {opacity:1;} }
+
+        .modal-content { 
+            background-color: var(--oxford-blue); margin: 5vh auto; padding: 2.5rem; 
+            border: 1px solid var(--orange-web); border-radius: 15px; width: 90%; max-width: 480px; 
+            position: relative; box-shadow: 0 20px 50px rgba(0,0,0,0.7); animation: slideUp 0.4s;
+        }
+        @keyframes slideUp { from {transform: translateY(50px); opacity:0;} to {transform: translateY(0); opacity:1;} }
+
+        .modal-close { position: absolute; top: 1rem; right: 1.5rem; color: var(--platinum); font-size: 2rem; cursor: pointer; }
+        .modal-close:hover { color: var(--orange-web); }
+
+        .modal h2 { text-align: center; color: var(--white); margin-bottom: 2rem; font-family: var(--font-heading); }
+
+        .form-group { margin-bottom: 1.5rem; }
+        label { display: block; margin-bottom: 0.5rem; color: var(--orange-web); font-weight: bold; font-size: 0.9rem; }
+        input { 
+            width: 100%; padding: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-grey); 
+            color: white; border-radius: 6px; font-size: 1rem; transition: 0.3s;
+        }
+        input:focus { border-color: var(--orange-web); outline: none; box-shadow: 0 0 0 3px rgba(252, 163, 17, 0.2); }
+
+        .btn-confirmar-pagamento { 
+            width: 100%; padding: 15px; background: var(--success-green); color: white; 
+            border: none; font-weight: bold; cursor: pointer; border-radius: 6px; font-size: 1.1rem; 
+            transition: 0.3s; display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+        .btn-confirmar-pagamento:hover { background: #2ecc71; transform: scale(1.02); }
+
+        #checkout-resultado { text-align: center; margin-top: 20px; }
+        #checkout-resultado img { max-width: 100%; border-radius: 8px; border: 4px solid white; }
+        #checkout-resultado textarea { width: 100%; background: #111; color: #aaa; border: 1px dashed #444; padding: 10px; margin-top: 10px; border-radius: 6px; resize: none; }
+
+        .loading-spinner { 
+            border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid var(--orange-web); 
+            border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 20px auto; 
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Toast */
+        .toast {
+            display: none; position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); 
+            padding: 1rem 2rem; border-radius: 50px; color: white; font-weight: bold; z-index: 3000; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5); align-items: center; gap: 10px; opacity: 0; transition: all 0.4s ease;
+        }
+        .toast.show { display: flex; opacity: 1; bottom: 3rem; }
+
+        /* =========================================================
+           6. SEÇÃO DE CUPOM (NOVO)
+           ========================================================= */
+        .cupom-section {
+            background: rgba(0,0,0,0.2);
+            border: 1px dashed var(--orange-web);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .cupom-section label {
+            color: var(--orange-web);
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .cupom-input-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .cupom-input-group input {
+            flex: 1;
+            text-transform: uppercase;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .btn-aplicar-cupom {
+            padding: 10px 16px;
+            background: transparent;
+            border: 2px solid var(--orange-web);
+            color: var(--orange-web);
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+
+        .btn-aplicar-cupom:hover {
+            background: var(--orange-web);
+            color: var(--black);
+        }
+
+        .btn-aplicar-cupom:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .cupom-status {
+            margin-top: 0.8rem;
+            font-size: 0.9rem;
+            min-height: 20px;
+        }
+
+        .cupom-status.sucesso {
+            color: var(--success-green);
+        }
+
+        .cupom-status.erro {
+            color: var(--error-red);
+        }
+
+        /* Resumo de preços com desconto */
+        .preco-resumo {
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .preco-linha {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.95rem;
+        }
+
+        .preco-linha.original {
+            color: #888;
+            text-decoration: line-through;
+        }
+
+        .preco-linha.desconto {
+            color: var(--success-green);
+        }
+
+        .preco-linha.final {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: var(--success-green);
+            border-top: 1px solid rgba(255,255,255,0.2);
+            padding-top: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .tag-desconto {
+            display: inline-block;
+            background: var(--success-green);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            margin-left: 5px;
+        }
+
+        /* Oculta a loja por padrão para evitar flash ao carregar via ?id= */
+        #main-store { display: none; }
+
+        /* Informações extras do livro no spotlight */
+        .spotlight-meta {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+        .spotlight-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.9rem;
+            color: var(--platinum);
+            opacity: 0.85;
+        }
+        .spotlight-meta-item i {
+            color: var(--orange-web);
+            font-size: 1rem;
+        }
+        .spotlight-intro {
+            background: rgba(255,255,255,0.05);
+            border-left: 3px solid var(--orange-web);
+            border-radius: 0 8px 8px 0;
+            padding: 1rem 1.2rem;
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+            color: var(--platinum);
+            line-height: 1.7;
+            font-style: italic;
+        }
+        .spotlight-intro-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--orange-web);
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            font-style: normal;
+        }
+
+        /* Responsividade */
+        @media(min-width: 768px) { .spotlight-wrapper { flex-direction: row; } }
+        @media(max-width: 768px) {
+            .spotlight-title { font-size: 2rem; }
+            .spotlight-price { font-size: 2.5rem; }
+            .spotlight-image { padding: 2rem; }
+            .spotlight-details { padding: 2rem; }
+            .modal-content { margin: 2vh auto; padding: 1.5rem; }
+        }
+
+        /* Abas PIX / Cartao */
+        .payment-tabs{display:flex;border-radius:8px;overflow:hidden;border:1px solid #333;margin-bottom:1.2rem;}
+        .payment-tab{flex:1;padding:.65rem;background:transparent;border:none;color:#888;font-family:inherit;font-size:.88rem;font-weight:bold;cursor:pointer;transition:all .25s;display:flex;align-items:center;justify-content:center;gap:.4rem;}
+        .payment-tab.active{background:#009ee3;color:#fff;}
+        #card-form .form-group input{background:rgba(255,255,255,.08);border:1px solid #444;border-radius:8px;color:#fff;padding:.7rem 1rem;width:100%;font-family:inherit;font-size:.9rem;outline:none;transition:border-color .3s;}
+        #card-form .form-group input:focus{border-color:#009ee3;}
+        #card-form .form-group input::placeholder{color:#666;}
+        #card-form .form-group label{display:block;font-size:.75rem;font-weight:bold;color:#009ee3;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.35rem;}
+        .card-row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;}
+        .installments-select{width:100%;padding:.7rem 1rem;background:rgba(255,255,255,.08);border:1px solid #444;border-radius:8px;color:#fff;font-family:inherit;font-size:.9rem;outline:none;cursor:pointer;}
+        .installments-select option{background:#14213d;}
+        .card-input-wrap{position:relative;}
+        .card-brand-icon{position:absolute;right:.75rem;top:50%;transform:translateY(-50%);height:24px;pointer-events:none;}
+        .btn-pagar-cartao{width:100%;padding:.95rem;background:linear-gradient(135deg,#009ee3,#0070b3);border:none;border-radius:8px;color:#fff;font-family:inherit;font-size:1rem;font-weight:bold;cursor:pointer;transition:all .3s;margin-top:.5rem;display:flex;align-items:center;justify-content:center;gap:8px;}
+        .btn-pagar-cartao:hover{opacity:.9;transform:translateY(-1px);}
+        .btn-pagar-cartao:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+        .card-resultado{border-radius:8px;padding:1rem;text-align:center;margin-top:.75rem;display:none;font-size:.9rem;}
+        .card-resultado.success{background:rgba(39,174,96,.15);border:1px solid #27ae60;color:#2ecc71;display:block;}
+        .card-resultado.error{background:rgba(231,76,60,.15);border:1px solid #e74c3c;color:#ff6b6b;display:block;}
+        .card-resultado.processing{background:rgba(243,156,18,.15);border:1px solid #f39c12;color:#f39c12;display:block;}
+
+        /* ── Modal Checkout Físico ── */
+        .fisico-section-title { font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:.8rem;display:flex;align-items:center;gap:.4rem; }
+        .fisico-section-title i { color:var(--orange-web); }
+        #fisico-preco-resumo { display:block;margin:1rem 0; }
+        .preco-resumo { background:rgba(252,163,17,.07);border:1px solid rgba(252,163,17,.2);border-radius:8px;padding:.8rem 1rem;margin:.8rem 0; }
+        .preco-linha { display:flex;justify-content:space-between;font-size:.88rem;color:#bbb;padding:.2rem 0; }
+        .preco-linha.final { font-weight:bold;color:#fff;border-top:1px solid rgba(255,255,255,.1);margin-top:.3rem;padding-top:.5rem;font-size:1rem; }
+        .payment-tabs { display:flex;gap:.5rem;margin:1rem 0; }
+        .payment-tab { flex:1;padding:.65rem;border:1px solid #333;background:transparent;color:#888;border-radius:8px;cursor:pointer;font-size:.88rem;font-weight:700;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:.4rem; }
+        .payment-tab.active { background:var(--orange-web);color:#000;border-color:var(--orange-web); }
+        .card-row { display:flex;gap:.75rem; }
+        .card-row .form-group { flex:1; }
+        .card-input-wrap { position:relative;display:flex;align-items:center; }
+        .card-input-wrap input { width:100%; }
+        .card-brand-icon { position:absolute;right:.75rem;height:24px;width:auto; }
+        .installments-select { width:100%;padding:.75rem 1rem;background:rgba(255,255,255,.06);border:1px solid #333;border-radius:8px;color:#fff;font-size:.9rem; }
+        .btn-confirmar-pagamento { width:100%;padding:1rem;background:#27ae60;color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.5rem;margin-top:1rem;transition:opacity .2s;font-size:1rem; }
+        .btn-confirmar-pagamento:hover { opacity:.9; }
+        .btn-pagar-cartao { width:100%;padding:1rem;background:#2979ff;color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.5rem;margin-top:1rem;font-size:1rem; }
+        .card-resultado { display:none;padding:.75rem 1rem;border-radius:8px;margin:.75rem 0;font-size:.88rem; }
+        .card-resultado.success { background:rgba(39,174,96,.15);color:#27ae60;border:1px solid #27ae60;display:block; }
+        .card-resultado.error   { background:rgba(231,76,60,.15);color:#e74c3c;border:1px solid #e74c3c;display:block; }
+        .card-resultado.processing { background:rgba(252,163,17,.1);color:var(--orange-web);border:1px solid var(--orange-web);display:block; }
+        .field-error { color:#e74c3c;font-size:.75rem;margin-top:.2rem;display:none; }
+        .cupom-section { margin:1rem 0; }
+        .cupom-section label { font-size:.78rem;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem;display:block; }
+        .cupom-input-group { display:flex;gap:.5rem; }
+        .cupom-input-group input { flex:1;padding:.65rem .9rem;background:rgba(255,255,255,.06);border:1px solid #333;border-radius:8px;color:#fff;font-size:.88rem;outline:none; }
+        .btn-aplicar-cupom { padding:.65rem 1rem;background:transparent;border:1px solid var(--orange-web);color:var(--orange-web);border-radius:8px;font-weight:700;font-size:.82rem;cursor:pointer;white-space:nowrap;transition:all .2s; }
+        .btn-aplicar-cupom:hover { background:var(--orange-web);color:#000; }
+        .cupom-status.sucesso { color:#27ae60; }
+        .cupom-status.erro    { color:#e74c3c; }
+        </style>
+</head>
+<body>
+
+    <a href="https://broostore.netlify.app" class="back-button" title="Voltar à loja">
+        <i class="fas fa-arrow-left"></i>
+    </a>
+
+    <main id="main-store">
+        <section class="section">
+            <div class="container">
+                <h2 class="section-title">Nossos <span class="portal-dot">Produtos</span></h2>
+                
+                <div class="bookshelf-grid">
+
+                    <!-- PACK DO GAME -->
+                    <div class="book-card" style="border: 2px solid var(--success-green);" 
+                         data-id="3" 
+                         data-name="PACK NÃO ENTRE COM O PÉ DIREITO!" 
+                         data-price="4.90" 
+                         data-desc="Quebre a maldição! Libere TODOS OS 8 PERSONAGENS e comece o ano com o pé direito. Bônus: Munição Infinita!"
+                         data-img="https://i.imgur.com/RpdfFwr.png">
+                        <img src="https://i.imgur.com/RpdfFwr.png" alt="Pack Game" class="book-cover">
+                        <div class="book-info">
+                            <h3 style="color: var(--success-green);">PACK DO GAME</h3>
+                            <p class="book-description">Todos personagens + Munição Infinita.</p>
+                            <p class="book-price">R$ 4,90</p>
+                            <button class="cta-button comprar-btn"><i class="fas fa-key"></i> Comprar Pack</button>
+                        </div>
+                    </div>
+
+                    <!-- PACOTE DE MOEDAS -->
+                    <div class="book-card" style="border: 2px solid var(--success-green);" 
+                         data-id="7" 
+                         data-name="Pacote de 100 Moedas" 
+                         data-price="27.90" 
+                         data-desc="100 moedas para usar nos jogos da Lizards. Compre e jogue com cashback!"
+                         data-img="https://i.imgur.com/ztE8SZH.jpeg">
+                        <img src="https://i.imgur.com/ztE8SZH.jpeg" alt="Pacote de Moedas" class="book-cover" style="object-fit: contain; background: #0a1120; padding: 10px;">
+                        <div class="book-info">
+                            <h3 style="color: var(--success-green);">🎮 PACOTE DE MOEDAS</h3>
+                            <p class="book-description">100 moedas para jogar com cashback. Preço especial de lançamento: R$ 27,90!</p>
+                            <p class="book-price">R$ 27,90</p>
+                            <button class="cta-button comprar-btn"><i class="fas fa-coins"></i> Comprar Moedas</button>
+                        </div>
+                    </div>
+
+                    <!-- LIVRO — Dracus Omégas -->
+                    <div class="book-card" data-id="6" 
+                         data-name="Física Geral: Teoria do Tudo" 
+                         data-price="80.00" 
+                         data-desc="Uma nova era do pensamento científico."
+                         data-img="https://i.imgur.com/GRAagYU.jpeg"
+                         data-autor="Dracus Omégas"
+                         data-paginas="134"
+                         data-intro="Neste livro, o autor desafia os limites do conhecimento convencional e propõe uma visão unificada da física moderna. De mecânica quântica a relatividade geral, cada capítulo revela conexões surpreendentes entre as forças que governam o universo — escrito de forma acessível para quem quer entender o cosmos de verdade."
+                         data-sobre-autor="Dracus Omégas é pesquisador independente e apaixonado por física teórica. Ao longo de mais de uma década dedicada ao estudo das grandes teorias da ciência moderna, desenvolveu uma abordagem única para tornar conceitos complexos acessíveis a qualquer leitor curioso. Física Geral: Teoria do Tudo é sua obra mais ambiciosa, reunindo anos de pesquisa em um único volume.">
+                        <img src="https://i.imgur.com/GRAagYU.jpeg" class="book-cover">
+                        <div class="book-info">
+                            <h3>Teoria do Tudo</h3>
+                            <p class="book-description">Uma nova era do pensamento científico.</p>
+                            <p class="book-price">R$ 80,00</p>
+                            <button class="cta-button comprar-btn"><i class="fas fa-shopping-cart"></i> Comprar</button>
+                        </div>
+                    </div>
+
+                    <!-- LIVRO — Kleber de Oliveira Andrade -->
+                    <div class="book-card" data-id="4" 
+                         data-name="A Ordem do Código Limpo" 
+                         data-price="47.14" 
+                         data-desc="Fundamentos da Clareza e da Sobrevivência"
+                         data-img="https://i.imgur.com/KCZS2tp.png"
+                         data-autor="Kleber de Oliveira Andrade"
+                         data-paginas="244"
+                         data-intro="Neste livro, o autor usa uma jornada épica de RPG para ensinar código limpo de forma envolvente e prática. Conceitos como clareza, coesão e simplicidade ganham vida em um mundo onde cada decisão importa — escrito para desenvolvedores que buscam construir sistemas sustentáveis sem perder a paixão por criar jogos."
+                         data-sobre-autor="Kleber de Oliveira Andrade é Doutor em Engenharia pela USP e atua há mais de duas décadas entre a academia e o mercado de tecnologia. Ao unir rigor científico ao pragmatismo empresarial, desenvolveu uma abordagem única para integrar narrativa e engenharia de software. A Ordem do Código Limpo é sua obra mais autoral, reunindo anos de ensino e prática em um guia que torna o código limpo acessível e memorável para qualquer programador.">
+                        <img src="https://i.imgur.com/KCZS2tp.png" class="book-cover">
+                        <div class="book-info">
+                            <h3>A Ordem do Código Limpo</h3>
+                            <p class="book-description">Fundamentos da Clareza e da Sobrevivência</p>
+                            <p class="book-price">R$ 47,14</p>
+                            <button class="cta-button comprar-btn"><i class="fas fa-shopping-cart"></i> Comprar</button>
+                        </div>
+                    </div>
+
+                    <!-- LIVRO — Alex Leal -->
+                    <div class="book-card" data-id="1" 
+                         data-name="História dos Jogos de Videogame" 
+                         data-price="15.90" 
+                         data-desc="Uma viagem eletrizante pela evolução dos consoles e jogos que marcaram gerações."
+                         data-img="https://i.imgur.com/xXa7Fo2.jpeg"
+                         data-autor="Alex Leal"
+                         data-paginas="32"
+                         data-intro="Uma jornada épica pelos videogames, onde cada geração é um checkpoint e cada inovação um power-up. De Pong aos indies, descubra histórias de quem ousou criar — com playlists, QR codes e curiosidades que revelam por trás dos pixels. Mais que datas, uma viagem humana pelos games que marcaram gerações."
+                         data-sobre-autor="Alex Leal é arquiteto de mundos multiplataformas e pixel-artista que mistura a exatidão da engenharia com a voz do narrador. Criou jogos para mobile, PC, Steam e realidade aumentada. Professor e comunicador, transforma conhecimento em experiências memoráveis. Autor do programa de rádio Atalho Virtual, defende que clareza é essencial.">
+                        <img src="https://i.imgur.com/xXa7Fo2.jpeg" class="book-cover">
+                        <div class="book-info">
+                            <h3>História dos Jogos de Videogame</h3>
+                            <p class="book-description">Uma viagem eletrizante pela evolução dos consoles e jogos que marcaram gerações.</p>
+                            <p class="book-price">R$ 15,90</p>
+                            <button class="cta-button comprar-btn"><i class="fas fa-shopping-cart"></i> Comprar</button>
+                        </div>
+                    </div>
+
+                    <!-- LIVRO — Lisiana Ferraz -->
+                    <div class="book-card" data-id="5" 
+                         data-name="O Resgate da Ordem pelo Amor" 
+                         data-price="15.90" 
+                         data-desc="A Constelação Familiar revela as dinâmicas ocultas que nos ligam ao nosso sistema."
+                         data-img="https://i.imgur.com/2DnyZFw.png"
+                         data-autor="Lisiana Ferraz"
+                         data-paginas="37"
+                         data-intro="Este ebook é um guia prático e transformador sobre Constelação Familiar Sistêmica. Com exercícios e exemplos reais, revela como dinâmicas invisíveis da família de origem influenciam sua vida — escrito para quem busca libertar padrões, curar relacionamentos e viver com mais plenitude, harmonia e autenticidade."
+                         data-sobre-autor="Lisiana Ferraz é especialista em Constelação Familiar Sistêmica e desenvolvimento humano, com MBA em Relações Humanas. Ao unir psicologia, comportamento e as Ordens do Amor, desenvolveu uma abordagem prática para tornar a cura sistêmica acessível a todos. O Resgate da Ordem pelo Amor é sua obra-guia, reunindo experiência e exercícios para transformação pessoal.">
+                        <img src="https://i.imgur.com/2DnyZFw.png" class="book-cover">
+                        <div class="book-info">
+                            <h3>O Resgate da Ordem pelo Amor</h3>
+                            <p class="book-description">A Constelação Familiar revela as dinâmicas ocultas que nos ligam ao nosso sistema.</p>
+                            <p class="book-price">R$ 15,90</p>
+                            <button class="cta-button comprar-btn"><i class="fas fa-shopping-cart"></i> Comprar</button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div id="spotlight-container">
+        <div class="spotlight-wrapper">
+            <div class="spotlight-image" id="spotlight-image-wrap">
+                <!-- Imagem simples (digital) -->
+                <img id="spot-img" src="" alt="Produto" style="display:block;">
+
+                <!-- Carrossel (físico - injetado via JS) -->
+                <div class="carrossel-wrap" id="carrossel-wrap" style="display:none;">
+                    <div class="carrossel-main">
+                        <button class="carr-arrow carr-prev" onclick="carrMove(-1)">
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <img id="carr-main-img" src="" alt="Foto principal">
+                        <button class="carr-arrow carr-next" onclick="carrMove(1)">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                    <div class="carrossel-thumbs" id="carr-thumbs"></div>
+                </div>
+            </div>
+            <div class="spotlight-details">
+                <span class="spotlight-tag">Oferta Especial</span>
+                <h1 id="spot-title" class="spotlight-title">Nome do Produto</h1>
+                <p id="spot-desc" class="spotlight-desc">Descrição detalhada do produto.</p>
+
+                <!-- Meta: autor e páginas (só aparece quando preenchido) -->
+                <div class="spotlight-meta" id="spot-meta" style="display:none;">
+                    <div class="spotlight-meta-item" id="spot-autor-wrap">
+                        <i class="fas fa-user-pen"></i>
+                        <span id="spot-autor"></span>
+                    </div>
+                    <div class="spotlight-meta-item" id="spot-paginas-wrap">
+                        <i class="fas fa-book-open"></i>
+                        <span id="spot-paginas"></span>
+                    </div>
+                </div>
+
+                <!-- Introdução do livro (só aparece quando preenchido) -->
+                <div class="spotlight-intro" id="spot-intro-wrap" style="display:none;">
+                    <div class="spotlight-intro-title"><i class="fas fa-quote-left"></i> Introdução</div>
+                    <span id="spot-intro"></span>
+                </div>
+
+                <div class="spotlight-intro" id="spot-sobre-autor-wrap" style="display:none;">
+                    <div class="spotlight-intro-title"><i class="fas fa-quote-left"></i> Sobre o Autor</div>
+                    <span id="spot-sobre-autor"></span>
+                </div>
+
+                <!-- Dados físicos do produto -->
+                <div id="spot-fisico-wrap" style="display:none;"></div>
+
+                <div id="spot-price" class="spotlight-price">R$ 0,00</div>
+                
+                <button id="spot-btn" class="spotlight-btn">
+                    <i class="fas fa-rocket"></i> GARANTIR AGORA
+                </button>
+                
+                <p style="margin-top: 1rem; color: #888; font-size: 0.8rem;">
+                    <i class="fas fa-lock"></i> Pagamento seguro via Mercado Pago
+                </p>
+                
+                <a href="https://broostore.netlify.app" style="margin-top: 2rem; color: var(--orange-web); text-decoration: underline; font-size: 0.9rem;">
+                    Ver outros produtos da loja
+                </a>
+            </div>
+        </div>
+    </div>
+
+        <!-- MODAL DE CHECKOUT COM CUPOM -->
+    <div id="checkout-modal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" id="checkout-modal-close">&times;</span>
+            <h2>
+                <img src="https://i.imgur.com/ELacEEt.png" alt="Mercado Pago" style="height: 60px; width: auto; padding: 5px; border-radius: 8px; background: white;">
+                <span style="margin-left: 10px;">Pagamento Seguro</span>
+            </h2>
+            <div id="checkout-produto-detalhes" style="margin-bottom: 1.5rem; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 1rem;"></div>
+            
+            <form id="checkout-form">
+                <input type="hidden" id="checkout_product_id" name="product_id">
+                <input type="hidden" id="checkout_product_name" name="product_name">
+                <input type="hidden" id="checkout_product_price" name="product_price">
+                <input type="hidden" id="checkout_cupom_id" name="cupom_id">
+                
+                <div class="form-group">
+                    <label>Nome Completo *</label>
+                    <input type="text" id="checkout_nome" name="nome" required minlength="2" placeholder="Digite seu nome completo">
+                </div>
+                
+                <div class="form-group">
+                    <label>Email *</label>
+                    <input type="email" id="checkout_email" name="email" required placeholder="seu@email.com">
+                </div>
+                
+                <div class="form-group">
+                    <label>Telefone *</label>
+                    <input type="tel" id="checkout_telefone" name="telefone" required placeholder="(11) 99999-9999" maxlength="15">
+                </div>
+               
+                <!-- SEÇÃO DE CUPOM -->
+                <div class="cupom-section">
+                    <label>
+                        <i class="fas fa-ticket-alt"></i> CUPOM DE DESCONTO (Opcional)
+                    </label>
+                    <div class="cupom-input-group">
+                        <input type="text" id="checkout_cupom" name="cupom" placeholder="Digite seu cupom" maxlength="20">
+                        <button type="button" class="btn-aplicar-cupom" id="btn-aplicar-cupom">
+                            Aplicar
+                        </button>
+                    </div>
+                    <div class="cupom-status" id="cupom-status"></div>
+                </div>
+
+                <!-- RESUMO DE PREÇOS -->
+                <div class="preco-resumo" id="preco-resumo" style="display: none;">
+                    <div class="preco-linha original">
+                        <span>Preço Original:</span>
+                        <span id="preco-original">R$ 0,00</span>
+                    </div>
+                    <div class="preco-linha desconto">
+                        <span>Desconto:</span>
+                        <span id="valor-desconto">-R$ 0,00</span>
+                    </div>
+                    <div class="preco-linha final">
+                        <span>Total a Pagar:</span>
+                        <span id="preco-final">R$ 0,00</span>
+                    </div>
+                </div>
+                
+                <!-- Abas -->
+                <div class="payment-tabs">
+                    <button type="button" class="payment-tab active" id="tab-pix" onclick="switchPaymentTab('pix')">
+                        <i class="fas fa-qrcode"></i> PIX
+                    </button>
+                    <button type="button" class="payment-tab" id="tab-cartao" onclick="switchPaymentTab('cartao')">
+                        <i class="fas fa-credit-card"></i> Cartão
+                    </button>
+                </div>
+                <div id="pix-section">
+                    <button type="submit" class="btn-confirmar-pagamento" id="btn-submit-checkout">
+                        <i class="fas fa-lock"></i> Gerar QR Code PIX
+                    </button>
+                </div>
+                <div id="cartao-section" style="display:none;">
+                    <div id="card-form">
+                        <div class="form-group">
+                            <label>Número do Cartão</label>
+                            <div class="card-input-wrap">
+                                <input type="text" id="card-number" placeholder="0000 0000 0000 0000"
+                                       maxlength="19" oninput="formatCardNumber(this)" autocomplete="cc-number">
+                                <img id="card-brand-img" class="card-brand-icon" src="" style="display:none;" alt="bandeira">
+                            </div>
+                        </div>
+                        <div class="card-row">
+                            <div class="form-group">
+                                <label>Validade</label>
+                                <input type="text" id="card-expiry" placeholder="MM/AA"
+                                       maxlength="5" oninput="formatExpiry(this)" autocomplete="cc-exp">
+                            </div>
+                            <div class="form-group">
+                                <label>CVV</label>
+                                <input type="text" id="card-cvv" placeholder="123" maxlength="4" autocomplete="cc-csc">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Nome no Cartão</label>
+                            <input type="text" id="card-name" placeholder="NOME COMO ESTÁ NO CARTÃO"
+                                   oninput="this.value=this.value.toUpperCase()" autocomplete="cc-name">
+                        </div>
+                        <div class="form-group">
+                            <label>CPF do Titular</label>
+                            <input type="text" id="card-cpf" placeholder="000.000.000-00"
+                                   maxlength="14" oninput="formatCPF(this)">
+                        </div>
+                        <div class="form-group" id="installments-group" style="display:none;">
+                            <label>Parcelamento</label>
+                            <select class="installments-select" id="card-installments"></select>
+                        </div>
+                        <div id="card-resultado" class="card-resultado"></div>
+                        <button type="button" class="btn-pagar-cartao" id="btn-pagar-cartao" onclick="pagarCartao()">
+                            <i class="fas fa-lock"></i> Pagar com Cartão
+                        </button>
+                    </div>
+                </div>
+            </form>
+            <div id="checkout-resultado">
+                 <div class="loading-spinner" id="checkout-spinner"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== MODAL CHECKOUT FÍSICO ========== -->
+    <div id="checkout-fisico-modal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <span class="modal-close" id="checkout-fisico-close">&times;</span>
+            <h2>
+                <img src="https://i.imgur.com/ELacEEt.png" alt="Mercado Pago"
+                     style="height:60px;width:auto;padding:5px;border-radius:8px;background:white;">
+                <span style="margin-left:10px;">Pagamento Seguro</span>
+            </h2>
+
+            <!-- Detalhes do produto -->
+            <div id="fisico-produto-detalhes"
+                 style="margin-bottom:1.5rem;text-align:center;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:1rem;"></div>
+
+            <form id="checkout-fisico-form">
+                <input type="hidden" id="fisico_product_id">
+                <input type="hidden" id="fisico_cupom_id">
+
+                <!-- DADOS PESSOAIS -->
+                <div class="fisico-section-title">
+                    <i class="fas fa-user"></i> Dados Pessoais
+                </div>
+
+                <div class="form-group">
+                    <label>Nome Completo *</label>
+                    <input type="text" id="fisico_nome" required minlength="2" placeholder="Digite seu nome completo">
+                    <div class="field-error"></div>
+                </div>
+                <div class="form-group">
+                    <label>Email *</label>
+                    <input type="email" id="fisico_email" required placeholder="seu@email.com">
+                    <div class="field-error"></div>
+                </div>
+                <div class="form-group">
+                    <label>Telefone *</label>
+                    <input type="tel" id="fisico_telefone" required placeholder="(11) 99999-9999" maxlength="15">
+                    <div class="field-error"></div>
+                </div>
+
+                <!-- ENDEREÇO DE ENTREGA -->
+                <div class="fisico-section-title" style="margin-top:1.2rem;">
+                    <i class="fas fa-map-marker-alt"></i> Endereço de Entrega
+                </div>
+
+                <div class="card-row">
+                    <div class="form-group" style="flex:1;">
+                        <label>CEP *</label>
+                        <input type="text" id="fisico_cep" required placeholder="00000-000"
+                               maxlength="9" oninput="buscarCEP(this)">
+                        <div class="field-error"></div>
+                    </div>
+                    <div class="form-group" style="flex:2;">
+                        <label>Rua / Logradouro *</label>
+                        <input type="text" id="fisico_rua" required placeholder="Nome da rua">
+                        <div class="field-error"></div>
+                    </div>
+                </div>
+
+                <div class="card-row">
+                    <div class="form-group" style="flex:1;">
+                        <label>Número *</label>
+                        <input type="text" id="fisico_numero" required placeholder="123">
+                        <div class="field-error"></div>
+                    </div>
+                    <div class="form-group" style="flex:2;">
+                        <label>Complemento</label>
+                        <input type="text" id="fisico_complemento" placeholder="Apto, Bloco...">
+                    </div>
+                </div>
+
+                <div class="card-row">
+                    <div class="form-group" style="flex:2;">
+                        <label>Bairro *</label>
+                        <input type="text" id="fisico_bairro" required placeholder="Bairro">
+                        <div class="field-error"></div>
+                    </div>
+                    <div class="form-group" style="flex:2;">
+                        <label>Cidade *</label>
+                        <input type="text" id="fisico_cidade" required placeholder="Cidade">
+                        <div class="field-error"></div>
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label>Estado *</label>
+                        <select id="fisico_estado" required>
+                            <option value="">UF</option>
+                            <option>AC</option><option>AL</option><option>AP</option><option>AM</option>
+                            <option>BA</option><option>CE</option><option>DF</option><option>ES</option>
+                            <option>GO</option><option>MA</option><option>MT</option><option>MS</option>
+                            <option>MG</option><option>PA</option><option>PB</option><option>PR</option>
+                            <option>PE</option><option>PI</option><option>RJ</option><option>RN</option>
+                            <option>RS</option><option>RO</option><option>RR</option><option>SC</option>
+                            <option>SP</option><option>SE</option><option>TO</option>
+                        </select>
+                        <div class="field-error"></div>
+                    </div>
+                </div>
+
+                <!-- CUPOM -->
+                <div class="cupom-section">
+                    <label><i class="fas fa-ticket-alt"></i> CUPOM DE DESCONTO (Opcional)</label>
+                    <div class="cupom-input-group">
+                        <input type="text" id="fisico_cupom" placeholder="Digite seu cupom" maxlength="20">
+                        <button type="button" class="btn-aplicar-cupom" id="fisico-btn-cupom"
+                                onclick="aplicarCupomFisico()">Aplicar</button>
+                    </div>
+                    <div class="cupom-status" id="fisico-cupom-status"></div>
+                </div>
+
+                <!-- SELECAO DE TRANSPORTADORA (frete calculado por CEP) -->
+                <div class="frete-selecao" id="fisico-frete-selecao" style="display:none; margin-top:1rem;">
+                    <label style="display:block; margin-bottom:.5rem; font-weight:600;">
+                        <i class="fas fa-truck"></i> ESCOLHA O FRETE
+                    </label>
+                    <div id="fisico-frete-opcoes"></div>
+                    <div class="frete-status" id="fisico-frete-status" style="font-size:.85rem; color:#888; margin-top:.4rem;"></div>
+                    <input type="hidden" id="fisico_frete_servico_id">
+                </div>
+
+                <!-- RESUMO COM FRETE -->
+                <div class="preco-resumo" id="fisico-preco-resumo">
+                    <div class="preco-linha">
+                        <span>Subtotal:</span>
+                        <span id="fisico-subtotal">R$ 0,00</span>
+                    </div>
+                    <div class="preco-linha">
+                        <span>Frete:</span>
+                        <span id="fisico-frete-valor">R$ 0,00</span>
+                    </div>
+                    <div class="preco-linha final">
+                        <span>Total:</span>
+                        <span id="fisico-total">R$ 0,00</span>
+                    </div>
+                </div>
+
+                <!-- ABAS PIX / CARTÃO (mesmo padrão do modal digital) -->
+                <div class="payment-tabs">
+                    <button type="button" class="payment-tab active" id="fisico-tab-pix"
+                            onclick="switchFisicoTab('pix')">
+                        <i class="fas fa-qrcode"></i> PIX
+                    </button>
+                    <button type="button" class="payment-tab" id="fisico-tab-cartao"
+                            onclick="switchFisicoTab('cartao')">
+                        <i class="fas fa-credit-card"></i> Cartão
+                    </button>
+                </div>
+
+                <div id="fisico-pix-section">
+                    <button type="submit" class="btn-confirmar-pagamento">
+                        <i class="fas fa-lock"></i> Gerar QR Code PIX
+                    </button>
+                </div>
+
+                <div id="fisico-cartao-section" style="display:none;">
+                    <div class="form-group">
+                        <label>Número do Cartão</label>
+                        <div class="card-input-wrap">
+                            <input type="text" id="fisico-card-number" placeholder="0000 0000 0000 0000"
+                                   maxlength="19" oninput="formatCardNumber(this)" autocomplete="cc-number">
+                            <img id="fisico-card-brand" class="card-brand-icon" src="" style="display:none;" alt="bandeira">
+                        </div>
+                    </div>
+                    <div class="card-row">
+                        <div class="form-group">
+                            <label>Validade</label>
+                            <input type="text" id="fisico-card-expiry" placeholder="MM/AA"
+                                   maxlength="5" oninput="formatExpiry(this)" autocomplete="cc-exp">
+                        </div>
+                        <div class="form-group">
+                            <label>CVV</label>
+                            <input type="text" id="fisico-card-cvv" placeholder="123" maxlength="4">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Nome no Cartão</label>
+                        <input type="text" id="fisico-card-name" placeholder="NOME COMO ESTÁ NO CARTÃO"
+                               oninput="this.value=this.value.toUpperCase()" autocomplete="cc-name">
+                    </div>
+                    <div class="form-group">
+                        <label>CPF do Titular</label>
+                        <input type="text" id="fisico-card-cpf" placeholder="000.000.000-00"
+                               maxlength="14" oninput="formatCPF(this)">
+                    </div>
+                    <div class="form-group" id="fisico-installments-group" style="display:none;">
+                        <label>Parcelamento</label>
+                        <select class="installments-select" id="fisico-card-installments"></select>
+                    </div>
+                    <div id="fisico-card-resultado" class="card-resultado"></div>
+                    <button type="button" class="btn-pagar-cartao" onclick="pagarCartaoFisico()">
+                        <i class="fas fa-lock"></i> Pagar com Cartão
+                    </button>
+                </div>
+            </form>
+
+            <div id="fisico-resultado"></div>
+        </div>
+    </div>
+
+
+    <div id="feedback-toast" class="toast"> 
+        <span class="toast-icon"><i class="fas fa-info-circle"></i></span>
+        <span class="toast-message"></span>
+    </div>
+
+    <script src="https://sdk.mercadopago.com/js/v2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // Substitua pela Public Key de produção da sua aplicação no Mercado Pago.
+       window.MERCADOPAGO_PUBLIC_KEY = "APP_USR-6361a062-ffe7-4bc6-9970-01767001aecb";
+    </script>
+    <script src="script.js"></script>
+
+    <script>
+    // ── Carrossel de fotos físico ─────────────────────────────
+    let carrFotos = [];
+    let carrIdx   = 0;
+
+    async function carregarCarrossel(productId, capaUrl) {
+        try {
+            const SUPABASE_URL  = 'https://gyepvrzkwesohbagpgfa.supabase.co';
+            const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd5ZXB2cnprd2Vzb2hiYWdwZ2ZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzMDk5OTAsImV4cCI6MjA3Njg4NTk5MH0.ePwzEE8FjikLiTyjbtJXUtIIwFRlaSf5RYe7iKMDnTA';
+            const sbC = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
+            let fotos = [];
+            if (sbC) {
+                const { data } = await sbC.from('product_photos')
+                    .select('url, ordem').eq('product_id', productId).order('ordem');
+                if (data) fotos = data.map(f => f.url);
+            }
+            if (capaUrl && !fotos.includes(capaUrl)) fotos = [capaUrl, ...fotos];
+            if (fotos.length === 0) fotos = [capaUrl];
+
+            if (fotos.length <= 1) {
+                document.getElementById('spot-img').src = fotos[0] || capaUrl;
+                document.getElementById('spot-img').style.display = 'block';
+                document.getElementById('carrossel-wrap').style.display = 'none';
+                return;
+            }
+            carrFotos = fotos; carrIdx = 0;
+            document.getElementById('spot-img').style.display = 'none';
+            document.getElementById('carrossel-wrap').style.display = 'flex';
+            renderCarrossel();
+        } catch(e) {
+            console.warn('Carrossel erro:', e);
+            document.getElementById('spot-img').style.display = 'block';
+            document.getElementById('carrossel-wrap').style.display = 'none';
+        }
+    }
+
+    function renderCarrossel() {
+        const mainImg = document.getElementById('carr-main-img');
+        const thumbs  = document.getElementById('carr-thumbs');
+        if (mainImg) mainImg.src = carrFotos[carrIdx];
+        if (thumbs) {
+            thumbs.innerHTML = carrFotos.map((url, i) =>
+                `<img src="${url}" class="carr-thumb ${i === carrIdx ? 'active' : ''}"
+                      onclick="carrGoTo(${i})" alt="Foto ${i+1}">`
+            ).join('');
+        }
+    }
+
+    function carrMove(dir) {
+        carrIdx = (carrIdx + dir + carrFotos.length) % carrFotos.length;
+        renderCarrossel();
+    }
+    function carrGoTo(idx) { carrIdx = idx; renderCarrossel(); }
+    </script>
+</body>
+</html>

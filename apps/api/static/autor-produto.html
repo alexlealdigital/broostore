@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BrooStore – Produto</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --black: #000000;
+            --oxford-blue: #14213d;
+            --orange-web: #fca311;
+            --platinum: #e5e5e5;
+            --white: #ffffff;
+            --success-green: #27ae60;
+            --error-red: #e74c3c;
+            --border-grey: #333333;
+            --font-heading: 'Poppins', sans-serif;
+            --font-body: 'Lato', sans-serif;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: var(--font-body); background: #0a0a0a; color: var(--white); min-height: 100vh; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .header {
+            background: var(--oxford-blue);
+            border-bottom: 1px solid var(--border-grey);
+            padding: 1rem 2rem;
+            display: flex; align-items: center; justify-content: space-between;
+            position: sticky; top: 0; z-index: 100;
+        }
+        .header-brand { font-family: var(--font-heading); color: var(--orange-web); font-size: 1.2rem; }
+        .btn-icon {
+            background: rgba(255,255,255,.07);
+            border: 1px solid var(--border-grey);
+            color: var(--white);
+            padding: .5rem .9rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: var(--font-body);
+            font-size: .85rem;
+            transition: all .3s;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .btn-icon:hover { border-color: var(--orange-web); color: var(--orange-web); }
+
+        .main { padding: 2rem; max-width: 860px; margin: 0 auto; }
+        .page-title { font-family: var(--font-heading); font-size: 1.6rem; margin-bottom: 2rem; }
+        .page-title span { color: var(--orange-web); }
+
+        .form-card {
+            background: var(--oxford-blue);
+            border: 1px solid var(--border-grey);
+            border-radius: 16px;
+            padding: 2rem;
+        }
+
+        .upload-area {
+            border: 2px dashed var(--border-grey);
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all .3s;
+            margin-bottom: 1.5rem;
+            position: relative;
+            min-height: 180px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: .5rem;
+        }
+        .upload-area:hover, .upload-area.dragover { border-color: var(--orange-web); background: rgba(252,163,17,.05); }
+        .upload-area i { font-size: 2.5rem; color: #444; }
+        .upload-area p { color: #666; font-size: .9rem; }
+        .upload-area strong { color: var(--orange-web); }
+        .upload-area input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+        .preview-img {
+            width: 120px; height: 160px;
+            object-fit: cover; border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,.5);
+        }
+        .upload-progress { width: 100%; height: 4px; background: #333; border-radius: 2px; margin-top: .5rem; overflow: hidden; display: none; }
+        .upload-progress-bar { height: 100%; background: var(--orange-web); transition: width .3s; }
+
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        @media(max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+
+        .form-group { margin-bottom: 1.2rem; }
+        .form-group.full { grid-column: 1 / -1; }
+        .form-group label {
+            display: block; font-size: .8rem; font-weight: bold;
+            color: var(--orange-web); margin-bottom: .4rem;
+            text-transform: uppercase; letter-spacing: .5px;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%; padding: .75rem 1rem;
+            background: rgba(255,255,255,.06);
+            border: 1px solid var(--border-grey);
+            border-radius: 8px; color: var(--white);
+            font-family: var(--font-body); font-size: .95rem;
+            outline: none; transition: border-color .3s;
+        }
+        .form-group select option { background: var(--oxford-blue); }
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus { border-color: var(--orange-web); }
+        .form-group input::placeholder,
+        .form-group textarea::placeholder { color: #555; }
+        .form-group textarea { resize: vertical; min-height: 100px; }
+
+        /* Preço bloqueado */
+        .form-group input[readonly] {
+            opacity: .55;
+            cursor: not-allowed;
+            border-color: #2a2a2a;
+        }
+        .preco-locked-msg {
+            display: flex; align-items: center; gap: .5rem;
+            background: rgba(252,163,17,.08);
+            border: 1px solid rgba(252,163,17,.25);
+            border-radius: 8px;
+            padding: .6rem .9rem;
+            font-size: .8rem;
+            color: var(--orange-web);
+            margin-top: .4rem;
+        }
+
+        /* Classificação indicativa */
+        .classif-grid {
+            display: flex; flex-wrap: wrap; gap: .6rem;
+            margin-top: .5rem;
+        }
+        .classif-btn {
+            position: relative;
+        }
+        .classif-btn input[type=radio] {
+            position: absolute; opacity: 0; width: 0; height: 0;
+        }
+        .classif-label {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            width: 72px; height: 72px;
+            border-radius: 12px;
+            border: 2px solid #333;
+            cursor: pointer;
+            transition: all .25s;
+            font-weight: bold;
+            font-size: .75rem;
+            gap: 4px;
+            background: rgba(255,255,255,.04);
+        }
+        .classif-label .cl-age {
+            font-family: var(--font-heading);
+            font-size: 1.1rem;
+            line-height: 1;
+        }
+        .classif-label .cl-desc { font-size: .62rem; color: #888; }
+
+        /* Cores por faixa */
+        .classif-btn input:checked + .classif-label { border-width: 2px; transform: scale(1.08); }
+        .cl-L  .classif-label { color: #2ecc71; }
+        .cl-L  input:checked + .classif-label { border-color: #2ecc71; background: rgba(46,204,113,.12); box-shadow: 0 0 12px rgba(46,204,113,.3); }
+        .cl-10 .classif-label { color: #3498db; }
+        .cl-10 input:checked + .classif-label { border-color: #3498db; background: rgba(52,152,219,.12); box-shadow: 0 0 12px rgba(52,152,219,.3); }
+        .cl-12 .classif-label { color: #f39c12; }
+        .cl-12 input:checked + .classif-label { border-color: #f39c12; background: rgba(243,156,18,.12); box-shadow: 0 0 12px rgba(243,156,18,.3); }
+        .cl-14 .classif-label { color: #e67e22; }
+        .cl-14 input:checked + .classif-label { border-color: #e67e22; background: rgba(230,126,34,.12); box-shadow: 0 0 12px rgba(230,126,34,.3); }
+        .cl-16 .classif-label { color: #e74c3c; }
+        .cl-16 input:checked + .classif-label { border-color: #e74c3c; background: rgba(231,76,60,.12); box-shadow: 0 0 12px rgba(231,76,60,.3); }
+        .cl-18 .classif-label { color: #8e44ad; }
+        .cl-18 input:checked + .classif-label { border-color: #8e44ad; background: rgba(142,68,173,.12); box-shadow: 0 0 12px rgba(142,68,173,.3); }
+
+        .classif-label:hover { border-color: #555; transform: scale(1.04); }
+
+        .char-counter { text-align: right; font-size: .75rem; color: #666; margin-top: .3rem; transition: color .3s; }
+        .char-counter.warn { color: var(--orange-web); }
+        .char-counter.over { color: var(--error-red); font-weight: bold; }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,.85);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 9999; padding: 1rem;
+        }
+        .modal-box {
+            background: var(--oxford-blue);
+            border: 1px solid var(--border-grey);
+            border-radius: 16px;
+            width: 100%; max-width: 680px;
+            max-height: 90vh;
+            display: flex; flex-direction: column;
+            overflow: hidden;
+        }
+        .modal-header {
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid var(--border-grey);
+            display: flex; align-items: center; gap: .75rem;
+        }
+        .modal-header i { color: var(--orange-web); font-size: 1.4rem; }
+        .modal-header h2 { font-family: var(--font-heading); font-size: 1.2rem; }
+        .modal-body {
+            padding: 1.5rem 2rem;
+            overflow-y: auto; flex: 1;
+            font-size: .88rem; line-height: 1.7; color: #ccc;
+        }
+        .modal-body h3 {
+            color: var(--orange-web); font-family: var(--font-heading);
+            font-size: .95rem; margin: 1.2rem 0 .4rem;
+        }
+        .modal-body p { margin-bottom: .6rem; }
+        .modal-footer {
+            padding: 1.2rem 2rem;
+            border-top: 1px solid var(--border-grey);
+            display: flex; flex-direction: column; gap: .75rem;
+        }
+        .radio-group { display: flex; gap: 1.5rem; }
+        .radio-group label { display: flex; align-items: center; gap: .5rem; cursor: pointer; font-size: .9rem; }
+        .radio-group input[type=radio] { accent-color: var(--orange-web); width: 16px; height: 16px; }
+        .btn-aceitar {
+            width: 100%; padding: .85rem;
+            background: var(--orange-web); border: none; border-radius: 8px;
+            color: var(--black); font-family: var(--font-heading);
+            font-size: 1rem; font-weight: bold; cursor: pointer; transition: all .3s;
+        }
+        .btn-aceitar:disabled { opacity: .4; cursor: not-allowed; }
+        .btn-aceitar:not(:disabled):hover { background: #ffb700; }
+
+        .hint { font-size: .78rem; color: #666; margin-top: .3rem; }
+
+        .btn-submit {
+            width: 100%; padding: 1rem;
+            background: var(--orange-web); border: none; border-radius: 8px;
+            color: var(--black); font-family: var(--font-heading);
+            font-size: 1rem; font-weight: bold; cursor: pointer;
+            text-transform: uppercase; letter-spacing: 1px; transition: all .3s;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            margin-top: .5rem;
+        }
+        .btn-submit:hover { background: #ffb700; transform: translateY(-2px); }
+        .btn-submit:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+        .msg { padding: .75rem 1rem; border-radius: 8px; font-size: .88rem; margin-bottom: 1.2rem; display: none; }
+        .msg.error   { background: rgba(231,76,60,.15); border: 1px solid var(--error-red); color: #ff6b6b; display: block; }
+        .msg.success { background: rgba(39,174,96,.15); border: 1px solid var(--success-green); color: #2ecc71; display: block; }
+
+        /* Fotos extras do produto físico */
+        .fotos-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: .6rem;
+            margin-top: .8rem;
+        }
+        @media(max-width:600px) { .fotos-grid { grid-template-columns: repeat(3, 1fr); } }
+
+        .foto-slot {
+            position: relative;
+            aspect-ratio: 1;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px dashed var(--border-grey);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,.04);
+            transition: border-color .2s;
+        }
+        .foto-slot.filled { border-style: solid; border-color: var(--orange-web); }
+        .foto-slot img { width:100%; height:100%; object-fit:cover; display:block; }
+        .foto-slot .remove-foto {
+            position: absolute; top: 4px; right: 4px;
+            background: rgba(231,76,60,.85); color: #fff;
+            border: none; border-radius: 50%; width: 22px; height: 22px;
+            cursor: pointer; font-size: .75rem; display: flex;
+            align-items: center; justify-content: center;
+            transition: background .2s;
+        }
+        .foto-slot .remove-foto:hover { background: #c0392b; }
+        .foto-slot.empty { cursor: pointer; }
+        .foto-slot.empty:hover { border-color: var(--orange-web); }
+        .foto-slot.empty i { font-size: 1.4rem; color: #444; }
+        .foto-slot.empty span { font-size: .65rem; color: #555; margin-top: .2rem; }
+        .foto-add-content { display:flex;flex-direction:column;align-items:center;gap:.2rem; }
+
+        .foto-metodos {
+            display: flex;
+            gap: .5rem;
+            margin-bottom: .6rem;
+        }
+        .foto-metodo-btn {
+            flex: 1;
+            padding: .45rem .6rem;
+            background: transparent;
+            border: 1px solid var(--border-grey);
+            border-radius: 7px;
+            color: #888;
+            font-size: .78rem;
+            cursor: pointer;
+            transition: all .2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: .35rem;
+        }
+        .foto-metodo-btn:hover, .foto-metodo-btn.active {
+            border-color: var(--orange-web);
+            color: var(--orange-web);
+            background: rgba(252,163,17,.08);
+        }
+
+        .foto-url-input-wrap {
+            display: none;
+            gap: .4rem;
+            margin-top: .4rem;
+        }
+        .foto-url-input-wrap.show { display: flex; }
+        .foto-url-input-wrap input {
+            flex: 1;
+            padding: .5rem .75rem;
+            background: rgba(255,255,255,.06);
+            border: 1px solid var(--border-grey);
+            border-radius: 7px;
+            color: var(--white);
+            font-size: .82rem;
+            outline: none;
+        }
+        .foto-url-input-wrap input:focus { border-color: var(--orange-web); }
+        .foto-url-btn {
+            padding: .5rem .9rem;
+            background: var(--orange-web);
+            border: none; border-radius: 7px;
+            color: #000; font-size: .82rem;
+            font-weight: bold; cursor: pointer;
+        }
+
+        /* Abas Digital / Físico */
+        .tipo-tabs {
+            display: flex;
+            gap: .6rem;
+            margin-bottom: 2rem;
+            background: rgba(255,255,255,.04);
+            padding: .4rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-grey);
+        }
+        .tipo-tab {
+            flex: 1;
+            padding: .75rem;
+            border: none;
+            border-radius: 9px;
+            background: transparent;
+            color: #888;
+            font-family: var(--font-body);
+            font-size: .92rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all .25s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: .5rem;
+        }
+        .tipo-tab.active {
+            background: var(--orange-web);
+            color: #000;
+        }
+        .tipo-tab:not(.active):hover {
+            background: rgba(252,163,17,.12);
+            color: var(--orange-web);
+        }
+
+        /* Seção exclusiva do físico */
+        #secao-fisico { display: none; }
+        #secao-digital { display: block; }
+
+        .divider { border: none; border-top: 1px solid var(--border-grey); margin: 1.5rem 0; }
+        .section-label {
+            font-family: var(--font-heading); font-size: .9rem; color: #888;
+            margin-bottom: 1rem; text-transform: uppercase; letter-spacing: .5px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="header-brand"><i class="fas fa-feather-alt"></i> BrooStore</div>
+    <div style="display:flex;gap:.75rem;">
+        <button class="btn-icon" onclick="window.location.href='/static/autor-login.html'">
+            <i class="fas fa-arrow-left"></i> Dashboard
+        </button>
+    </div>
+</div>
+
+<div class="main">
+    <h1 class="page-title" id="page-title">Cadastrar <span>Novo Produto</span></h1>
+
+    <div class="form-card">
+        <div id="msg" class="msg"></div>
+
+        <!-- Abas Digital / Físico -->
+        <div class="tipo-tabs">
+            <button class="tipo-tab active" id="tab-digital" onclick="switchTipo('digital')">
+                <i class="fas fa-bolt"></i> Produto Digital
+            </button>
+            <button class="tipo-tab" id="tab-fisico" onclick="switchTipo('fisico')">
+                <i class="fas fa-box"></i> Produto Físico
+            </button>
+        </div>
+
+        <!-- Upload da capa -->
+        <div class="section-label"><i class="fas fa-image"></i> Capa do Produto</div>
+        <div class="upload-area" id="upload-area"
+             ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+            <input type="file" id="input-capa" accept="image/jpeg,image/png,image/webp" onchange="onFileSelect(event)">
+            <div id="upload-placeholder">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <p>Arraste a capa aqui ou <strong>clique para selecionar</strong></p>
+                <p style="font-size:.78rem;color:#555;">JPG, PNG ou WEBP — máx. 2 MB</p>
+            </div>
+            <img id="preview-img" class="preview-img" style="display:none;" alt="preview">
+            <div class="upload-progress" id="upload-progress">
+                <div class="upload-progress-bar" id="upload-bar" style="width:0%"></div>
+            </div>
+        </div>
+
+        <hr class="divider">
+
+        <!-- Dados do produto -->
+        <div class="section-label"><i class="fas fa-info-circle"></i> Dados do Produto</div>
+        <div class="form-grid">
+            <div class="form-group full">
+                <label>Título do Produto * <span class="char-counter" id="cnt-titulo">0/80</span></label>
+                <input type="text" id="titulo" maxlength="80" placeholder="Ex: Física Geral: Teoria do Tudo" oninput="contarChars('titulo','cnt-titulo',80)">
+            </div>
+            <div class="form-group full">
+                <label>Descrição curta * <span class="char-counter" id="cnt-descricao">0/160</span></label>
+                <textarea id="descricao" maxlength="160" placeholder="Uma frase que resume seu produto..." oninput="contarChars('descricao','cnt-descricao',160)"></textarea>
+            </div>
+
+            <!-- Preço -->
+            <div class="form-group" id="grupo-preco">
+                <label>Preço (R$) *</label>
+                <input type="number" id="preco" placeholder="Ex: 49.90" step="0.01" min="1">
+                <div id="preco-locked-info" class="preco-locked-msg" style="display:none;">
+                    <i class="fas fa-lock"></i>
+                    <span>Preço fixo após a primeira venda. Use cupons para oferecer descontos.</span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Categoria *</label>
+                <select id="categoria">
+                    <option value="">Selecione...</option>
+                    <option value="Tecnologia">Tecnologia</option>
+                    <option value="Ciência">Ciência</option>
+                    <option value="Games">Games</option>
+                    <option value="Família e Relacionamento">Família e Relacionamento</option>
+                    <option value="Negócios">Negócios</option>
+                    <option value="Saúde">Saúde</option>
+                    <option value="Quadrinhos">Quadrinhos</option>
+                    <option value="Mangá">Mangá</option>
+                    <option value="Impressão 3D">Impressão 3D</option>
+                    <option value="Acessórios">Acessórios</option>
+                    <option value="Outros">Outros</option>
+                </select>
+            </div>
+
+            <!-- Classificação Indicativa -->
+            <div class="form-group full">
+                <label><i class="fas fa-shield-alt" style="margin-right:.3rem;"></i> Classificação Indicativa *</label>
+                <div class="classif-grid">
+                    <div class="classif-btn cl-L">
+                        <input type="radio" name="classificacao" id="cl-L" value="L">
+                        <label class="classif-label" for="cl-L">
+                            <span class="cl-age">L</span>
+                            <span class="cl-desc">Livre</span>
+                        </label>
+                    </div>
+                    <div class="classif-btn cl-10">
+                        <input type="radio" name="classificacao" id="cl-10" value="10">
+                        <label class="classif-label" for="cl-10">
+                            <span class="cl-age">10+</span>
+                            <span class="cl-desc">10 anos</span>
+                        </label>
+                    </div>
+                    <div class="classif-btn cl-12">
+                        <input type="radio" name="classificacao" id="cl-12" value="12">
+                        <label class="classif-label" for="cl-12">
+                            <span class="cl-age">12+</span>
+                            <span class="cl-desc">12 anos</span>
+                        </label>
+                    </div>
+                    <div class="classif-btn cl-14">
+                        <input type="radio" name="classificacao" id="cl-14" value="14">
+                        <label class="classif-label" for="cl-14">
+                            <span class="cl-age">14+</span>
+                            <span class="cl-desc">14 anos</span>
+                        </label>
+                    </div>
+                    <div class="classif-btn cl-16">
+                        <input type="radio" name="classificacao" id="cl-16" value="16">
+                        <label class="classif-label" for="cl-16">
+                            <span class="cl-age">16+</span>
+                            <span class="cl-desc">16 anos</span>
+                        </label>
+                    </div>
+                    <div class="classif-btn cl-18">
+                        <input type="radio" name="classificacao" id="cl-18" value="18">
+                        <label class="classif-label" for="cl-18">
+                            <span class="cl-age">18+</span>
+                            <span class="cl-desc">Adulto</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="hint" style="margin-top:.6rem;"><i class="fas fa-info-circle" style="color:var(--orange-web);"></i> Selecione a classificação correta. Você é responsável pela classificação da sua obra conforme a legislação brasileira.</div>
+            </div>
+
+            <!-- Campo autor — comum a digital e físico -->
+            <div class="form-group" style="grid-column:1/-1;">
+                <label>Autor / Criador</label>
+                <input type="text" id="autor" placeholder="Nome do autor ou criador">
+            </div>
+
+            <hr class="divider" style="grid-column:1/-1;">
+            <!-- INÍCIO SEÇÃO DIGITAL -->
+            <div id="secao-digital" style="grid-column:1/-1;display:contents;">
+            <div class="section-label" style="grid-column:1/-1;"><i class="fas fa-book-open"></i> Informações da Página de Venda (opcional)</div>
+            <div class="form-group">
+                <label>Número de páginas</label>
+                <input type="number" id="paginas" placeholder="Ex: 312" min="1">
+            </div>
+            <div class="form-group full">
+                <label>Introdução do livro <span class="char-counter" id="cnt-intro">0/1200</span></label>
+                <textarea id="intro" maxlength="1200" placeholder="Trecho introdutório para atrair o leitor..." style="min-height:120px;" oninput="contarChars('intro','cnt-intro',1200)"></textarea>
+            </div>
+            <div class="form-group full">
+                <label>Sobre o autor <span class="char-counter" id="cnt-sobre">0/1200</span></label>
+                <textarea id="sobre-autor" maxlength="1200" placeholder="Breve biografia do autor..." style="min-height:120px;" oninput="contarChars('sobre-autor','cnt-sobre',1200)"></textarea>
+            </div>
+
+            <hr class="divider" style="grid-column:1/-1;">
+            <div class="section-label" style="grid-column:1/-1;"><i class="fas fa-file-pdf"></i> Arquivo do Produto (PDF)</div>
+
+            <div class="form-group full">
+                <div class="upload-area" id="upload-pdf-area"
+                     ondragover="onDragOverPdf(event)" ondragleave="onDragLeavePdf(event)" ondrop="onDropPdf(event)"
+                     style="min-height:120px;">
+                    <input type="file" id="input-pdf" accept="application/pdf" onchange="onPdfSelect(event)">
+                    <div id="upload-pdf-placeholder">
+                        <i class="fas fa-file-pdf" style="font-size:2rem;color:#e74c3c;"></i>
+                        <p>Arraste o PDF aqui ou <strong>clique para selecionar</strong></p>
+                        <p style="font-size:.78rem;color:#555;">Somente PDF — máx. 12 MB</p>
+                    </div>
+                    <div id="pdf-selecionado" style="display:none;text-align:center;">
+                        <i class="fas fa-file-pdf" style="font-size:2rem;color:#e74c3c;"></i>
+                        <p id="pdf-nome" style="color:var(--orange-web);margin-top:.5rem;font-weight:bold;"></p>
+                        <p id="pdf-tamanho" style="color:#666;font-size:.8rem;"></p>
+                    </div>
+                    <div class="upload-progress" id="upload-pdf-progress">
+                        <div class="upload-progress-bar" id="upload-pdf-bar" style="width:0%"></div>
+                    </div>
+                </div>
+                <div class="hint"><i class="fas fa-lock" style="color:var(--orange-web);"></i> O arquivo fica protegido — só quem comprar recebe o link de acesso.</div>
+            </div>
+        </div>
+
+            </div><!-- FIM SEÇÃO DIGITAL -->
+
+        <!-- SEÇÃO FÍSICA -->
+        <div id="secao-fisico" style="grid-column:1/-1;">
+            <hr class="divider">
+            <div class="section-label"><i class="fas fa-info-circle"></i> Detalhes do Produto Físico</div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Peso (ex: 300g)</label>
+                    <input type="text" id="peso" placeholder="Ex: 300g ou 1.2kg">
+                </div>
+                <div class="form-group">
+                    <label>Dimensões (ex: 20x15x5cm)</label>
+                    <input type="text" id="dimensoes" placeholder="Ex: 20x15x5cm">
+                </div>
+                <div class="form-group">
+                    <label>Frete fixo (R$) *</label>
+                    <input type="number" id="frete" placeholder="Ex: 15.90" step="0.01" min="0">
+                    <div class="hint"><i class="fas fa-info-circle" style="color:var(--orange-web);"></i> Valor cobrado do comprador além do preço do produto.</div>
+                </div>
+                <div class="form-group">
+                    <label>Estoque disponível *</label>
+                    <input type="number" id="estoque" placeholder="Ex: 10" min="0" step="1">
+                </div>
+                <div class="form-group full">
+                    <label>Prazo de produção / envio</label>
+                    <input type="text" id="prazo-prod" placeholder="Ex: 3 a 5 dias úteis após confirmação">
+                </div>
+                <div class="form-group full">
+                    <label>Materiais / Especificações <span class="char-counter" id="cnt-specs">0/400</span></label>
+                    <textarea id="specs" maxlength="400" placeholder="Descreva materiais, cores disponíveis, acabamento..."
+                              oninput="contarChars('specs','cnt-specs',400)" style="min-height:100px;"></textarea>
+                </div>
+            </div>
+
+            <!-- FOTOS EXTRAS DO PRODUTO FÍSICO -->
+            <hr class="divider" style="margin-top:1.5rem;">
+            <div class="section-label"><i class="fas fa-images"></i> Fotos do Produto (até 5)</div>
+            <p class="hint" style="margin-bottom:.8rem;">
+                <i class="fas fa-info-circle" style="color:var(--orange-web);"></i>
+                A capa do card usa a imagem principal acima. Estas fotos aparecem no carrossel da página de venda.
+            </p>
+
+            <!-- Método de adição -->
+            <div class="foto-metodos">
+                <button type="button" class="foto-metodo-btn active" id="btn-metodo-upload"
+                        onclick="setFotoMetodo('upload')">
+                    <i class="fas fa-cloud-upload-alt"></i> Upload
+                </button>
+                <button type="button" class="foto-metodo-btn" id="btn-metodo-url"
+                        onclick="setFotoMetodo('url')">
+                    <i class="fas fa-link"></i> URL externa
+                </button>
+            </div>
+
+            <!-- Upload direto -->
+            <div id="foto-upload-wrap">
+                <input type="file" id="input-foto-extra" accept="image/jpeg,image/png,image/webp"
+                       style="display:none;" onchange="onFotoUploadSelect(event)">
+            </div>
+
+            <!-- URL externa -->
+            <div class="foto-url-input-wrap" id="foto-url-wrap">
+                <input type="url" id="foto-url-input" placeholder="https://exemplo.com/foto.jpg">
+                <button type="button" class="foto-url-btn" onclick="adicionarFotoURL()">
+                    <i class="fas fa-plus"></i> Adicionar
+                </button>
+            </div>
+
+            <!-- Grid de fotos -->
+            <div class="fotos-grid" id="fotos-grid">
+                <!-- Slots gerados pelo JS -->
+            </div>
+
+        </div><!-- FIM SEÇÃO FÍSICA -->
+
+        <button class="btn-submit" id="btn-salvar" onclick="verificarTermosAntesDeSalvar()">
+            <i class="fas fa-rocket" id="btn-icon"></i> <span id="btn-label">Publicar Produto</span>
+        </button>
+    </div>
+</div>
+
+<!-- Modal Termos de Uso -->
+<div class="modal-overlay" id="modal-termos" style="display:none;">
+    <div class="modal-box">
+        <div class="modal-header">
+            <i class="fas fa-file-contract"></i>
+            <h2>Termos de Uso — Publicação de Produtos</h2>
+        </div>
+        <div class="modal-body">
+            <p>Antes de publicar seu primeiro produto na <strong>BrooStore</strong>, leia atentamente os termos abaixo. Ao aceitar, você confirma que leu, compreendeu e concorda com todas as condições.</p>
+
+            <h3>1. Responsabilidade pelo Conteúdo</h3>
+            <p>O conteúdo publicado — incluindo textos, imagens, arquivos e descrições — é de <strong>inteira responsabilidade do autor</strong>. A BrooStore atua como plataforma intermediária e não se responsabiliza por informações incorretas, direitos autorais de terceiros, conteúdo enganoso ou qualquer dano causado ao consumidor decorrente do produto publicado.</p>
+
+            <h3>2. Conformidade com a Legislação Brasileira</h3>
+            <p>O autor declara que seu produto está em conformidade com a legislação brasileira vigente, especialmente: <strong>Lei nº 9.610/1998</strong> (Lei de Direitos Autorais), <strong>Lei nº 8.078/1990</strong> (Código de Defesa do Consumidor), <strong>Lei nº 13.709/2018</strong> (LGPD) e o <strong>Marco Civil da Internet (Lei nº 12.965/2014)</strong>.</p>
+
+            <h3>3. Classificação Indicativa</h3>
+            <p>O autor é <strong>integralmente responsável pela classificação indicativa</strong> atribuída à sua obra, conforme as diretrizes do Ministério da Justiça e Segurança Pública do Brasil. A classificação deve refletir com fidelidade o conteúdo da obra — incluindo temas de violência, linguagem, sexualidade e conteúdo adulto.</p>
+            <p>Obras com classificação <strong>18 anos</strong> ficarão ocultas por padrão na loja e serão exibidas somente para usuários que confirmarem ser maiores de idade. A BrooStore se reserva o direito de reclassificar ou remover produtos cuja classificação declarada seja incompatível com o conteúdo real.</p>
+
+            <h3>4. Conteúdo Proibido</h3>
+            <p>É expressamente vedada a publicação de conteúdo que: contenha discurso de ódio, preconceito ou incitação à violência; viole direitos autorais ou propriedade intelectual de terceiros; promova atividades ilegais; seja de natureza sexual explícita envolvendo menores; induza o consumidor ao erro ou contenha informações falsas.</p>
+            <p>A BrooStore se reserva o direito de <strong>remover qualquer produto</strong> que viole estas diretrizes, sem aviso prévio.</p>
+
+            <h3>5. Taxa da Plataforma</h3>
+            <p>A BrooStore retém <strong>25% (vinte e cinco por cento)</strong> sobre o valor bruto de cada venda. O autor recebe <strong>75%</strong> do valor bruto de cada venda realizada.</p>
+
+            <h3>6. Política de Preços e Cupons de Desconto</h3>
+            <p>O autor define livremente o preço de seu produto no momento da publicação. <strong>Após a realização da primeira venda, o preço do produto fica fixo e não poderá ser alterado.</strong> Esta política garante transparência e confiança ao consumidor que já adquiriu o produto pelo preço original.</p>
+            <p>Para oferecer descontos após a primeira venda, o autor deverá utilizar o <strong>sistema de cupons</strong> disponível no dashboard. Cupons têm validade máxima de 30 dias e o autor pode manter até 3 cupons ativos simultaneamente por produto.</p>
+
+            <h3>7. Prazo de Pagamento</h3>
+            <p>Após a solicitação de saque, o pagamento via PIX será realizado em até <strong>72 horas úteis</strong>. Solicitações em fins de semana ou feriados serão processadas no próximo dia útil.</p>
+
+            <h3>8. Cancelamento e Reembolso</h3>
+            <p>O consumidor tem direito ao reembolso integral conforme o <strong>art. 49 do CDC</strong> (arrependimento em até 7 dias para compras digitais). O valor correspondente será deduzido do saldo disponível do autor.</p>
+
+            <h3>9. Alterações nos Termos</h3>
+            <p>A BrooStore pode atualizar estes termos a qualquer momento. O autor será notificado por e-mail e deverá aceitar novamente para continuar publicando produtos.</p>
+
+            <p style="margin-top:1rem; color:#888; font-size:.8rem;">Última atualização: Maio de 2026.</p>
+        </div>
+        <div class="modal-footer">
+            <div class="radio-group">
+                <label>
+                    <input type="radio" name="termos" value="aceito" onchange="onRadioTermos(this)">
+                    Aceito os Termos de Uso
+                </label>
+                <label>
+                    <input type="radio" name="termos" value="recuso" onchange="onRadioTermos(this)">
+                    Não aceito
+                </label>
+            </div>
+            <button class="btn-aceitar" id="btn-aceitar-termos" disabled onclick="confirmarTermos()">
+                Continuar para Publicação
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+    // ── Tipo: Digital / Físico ───────────────────────────────
+    let tipoAtual = 'digital';
+
+    function switchTipo(tipo) {
+        tipoAtual = tipo;
+        document.getElementById('tab-digital').classList.toggle('active', tipo === 'digital');
+        document.getElementById('tab-fisico').classList.toggle('active',  tipo === 'fisico');
+
+        // Mostra/oculta seções
+        document.getElementById('secao-digital').style.display = tipo === 'digital' ? 'contents' : 'none';
+        document.getElementById('secao-fisico').style.display  = tipo === 'fisico'  ? 'block'    : 'none';
+
+        // PDF obrigatório apenas para digital
+        const pdfArea = document.getElementById('upload-pdf-area');
+        if (pdfArea) pdfArea.closest('.form-group').style.display = tipo === 'digital' ? 'block' : 'none';
+
+        // Inicializa grid de fotos ao abrir aba física
+        if (tipo === 'fisico') renderFotosGrid();
+    }
+
+    function contarChars(fieldId, counterId, max) {
+        const len = document.getElementById(fieldId).value.length;
+        const el  = document.getElementById(counterId);
+        el.textContent = `${len}/${max}`;
+        el.className = 'char-counter' + (len >= max ? ' over' : len >= max * 0.85 ? ' warn' : '');
+    }
+
+    const TERMOS_KEY = 'broo_termos_aceitos';
+
+    function onRadioTermos(radio) {
+        const btn = document.getElementById('btn-aceitar-termos');
+        btn.disabled = radio.value !== 'aceito';
+        btn.textContent = radio.value === 'aceito' ? 'Continuar para Publicação' : 'Você precisa aceitar para publicar';
+    }
+
+    function confirmarTermos() {
+        localStorage.setItem(TERMOS_KEY, '1');
+        document.getElementById('modal-termos').style.display = 'none';
+        salvarProduto();
+    }
+
+    function verificarTermosAntesDeSalvar() {
+        if (!modoEdicao && localStorage.getItem(TERMOS_KEY) !== '1') {
+            document.querySelectorAll('input[name="termos"]').forEach(r => r.checked = false);
+            document.getElementById('btn-aceitar-termos').disabled = true;
+            document.getElementById('btn-aceitar-termos').textContent = 'Continuar para Publicação';
+            document.getElementById('modal-termos').style.display = 'flex';
+        } else {
+            salvarProduto();
+        }
+    }
+
+    const SUPABASE_URL  = 'https://gyepvrzkwesohbagpgfa.supabase.co';
+    const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd5ZXB2cnprd2Vzb2hiYWdwZ2ZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzMDk5OTAsImV4cCI6MjA3Njg4NTk5MH0.ePwzEE8FjikLiTyjbtJXUtIIwFRlaSf5RYe7iKMDnTA';
+    // sb em escopo de módulo para ser acessível por todas as funções
+    window._sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+    const sb = window._sb;
+
+    const params     = new URLSearchParams(window.location.search);
+    const editId     = params.get('edit');
+    const modoEdicao = !!editId;
+
+    let usuarioAtual    = null;
+    let arquivoCapa     = null;
+    let arquivoPdf      = null;
+    let imageUrlFinal   = '';
+    let produtoOriginal = null;
+    let precoLocked     = false;
+
+    if (modoEdicao) {
+        document.getElementById('page-title').innerHTML  = 'Editar <span>Produto</span>';
+        document.getElementById('btn-icon').className    = 'fas fa-save';
+        document.getElementById('btn-label').textContent = 'Salvar Alterações';
+        document.title = 'BrooStore – Editar Produto';
+    }
+
+    sb.auth.getSession().then(async ({ data: { session } }) => {
+        if (!session) { window.location.href = '/static/autor-login.html'; return; }
+        usuarioAtual = session.user;
+        if (modoEdicao) {
+            await carregarProdutoParaEdicao();
+        } else {
+            // Novo produto: abre termos se necessário
+            if (localStorage.getItem(TERMOS_KEY) !== '1') {
+                document.querySelectorAll('input[name="termos"]').forEach(r => r.checked = false);
+                document.getElementById('btn-aceitar-termos').disabled = true;
+                document.getElementById('modal-termos').style.display = 'flex';
+            }
+        }
+    });
+
+    async function carregarProdutoParaEdicao() {
+        let p = null;
+        const { data: d1 } = await sb.from('products').select('*')
+            .eq('id', editId).eq('author_id', usuarioAtual.id).maybeSingle();
+        if (d1) {
+            p = d1;
+        } else {
+            const { data: d2, error: e2 } = await sb.from('products').select('*')
+                .eq('id', editId).maybeSingle();
+            if (e2 || !d2) {
+                alert('Produto não encontrado.');
+                window.location.href = '/static/autor-login.html';
+                return;
+            }
+            p = d2;
+        }
+        produtoOriginal = p;
+
+        document.getElementById('titulo').value      = p.title      || '';
+        document.getElementById('descricao').value   = p.descricao  || '';
+        document.getElementById('preco').value       = p.price      || '';
+        document.getElementById('categoria').value   = p.category   || '';
+        document.getElementById('autor').value       = p.author     || '';
+        document.getElementById('paginas').value     = p.paginas    || '';
+        document.getElementById('intro').value       = p.intro      || '';
+        document.getElementById('sobre-autor').value = p.sobre_autor || '';
+
+        // Classificação
+        const cl = p.classificacao || 'L';
+        const radio = document.querySelector(`input[name="classificacao"][value="${cl}"]`);
+        if (radio) radio.checked = true;
+
+        // Tipo do produto
+        if (p.tipo === 'fisico') {
+            switchTipo('fisico');
+            await carregarFotosExtras(parseInt(editId));
+            if (p.frete)      document.getElementById('frete').value      = p.frete;
+            if (p.estoque !== null) document.getElementById('estoque').value = p.estoque;
+            if (p.peso)       document.getElementById('peso').value       = p.peso;
+            if (p.dimensoes)  document.getElementById('dimensoes').value  = p.dimensoes;
+            if (p.prazo_prod) document.getElementById('prazo-prod').value = p.prazo_prod;
+            if (p.specs)      document.getElementById('specs').value      = p.specs;
+        }
+
+        contarChars('titulo','cnt-titulo',80);
+        contarChars('descricao','cnt-descricao',160);
+        contarChars('intro','cnt-intro',1200);
+        contarChars('sobre-autor','cnt-sobre',1200);
+
+        if (p.image_url) {
+            document.getElementById('preview-img').src = p.image_url;
+            document.getElementById('preview-img').style.display = 'block';
+            document.getElementById('upload-placeholder').style.display = 'none';
+            imageUrlFinal = p.image_url;
+        }
+        if (p.link_pdf) {
+            document.getElementById('upload-pdf-placeholder').style.display = 'none';
+            document.getElementById('pdf-selecionado').style.display = 'block';
+            document.getElementById('pdf-nome').textContent    = 'PDF atual mantido';
+            document.getElementById('pdf-tamanho').textContent = 'Selecione um novo arquivo para substituir';
+        }
+
+        // Verifica se tem vendas — bloqueia preço se sim
+        const { data: vendas } = await sb.from('sales').select('id')
+            .eq('product_id', editId).in('status', ['approved','paid']).limit(1);
+
+        if (vendas && vendas.length > 0) {
+            precoLocked = true;
+            const campoPreco = document.getElementById('preco');
+            campoPreco.readOnly = true;
+            document.getElementById('preco-locked-info').style.display = 'flex';
+        }
+    }
+
+    // Upload handlers
+    function onDragOver(e)    { e.preventDefault(); document.getElementById('upload-area').classList.add('dragover'); }
+    function onDragLeave()    { document.getElementById('upload-area').classList.remove('dragover'); }
+    function onDrop(e)        { e.preventDefault(); document.getElementById('upload-area').classList.remove('dragover'); const f=e.dataTransfer.files[0]; if(f) processarArquivo(f); }
+    function onFileSelect(e)  { const f=e.target.files[0]; if(f) processarArquivo(f); }
+    function onDragOverPdf(e) { e.preventDefault(); document.getElementById('upload-pdf-area').classList.add('dragover'); }
+    function onDragLeavePdf() { document.getElementById('upload-pdf-area').classList.remove('dragover'); }
+    function onDropPdf(e)     { e.preventDefault(); document.getElementById('upload-pdf-area').classList.remove('dragover'); const f=e.dataTransfer.files[0]; if(f) processarPdf(f); }
+    function onPdfSelect(e)   { const f=e.target.files[0]; if(f) processarPdf(f); }
+
+    function processarPdf(file) {
+        if (file.size > 12*1024*1024) { mostrarMsg('PDF muito grande. Máximo 12 MB.','error'); return; }
+        if (file.type !== 'application/pdf') { mostrarMsg('Formato inválido. Selecione um PDF.','error'); return; }
+        arquivoPdf = file;
+        const mb = (file.size/1024/1024).toFixed(2);
+        document.getElementById('upload-pdf-placeholder').style.display = 'none';
+        document.getElementById('pdf-selecionado').style.display = 'block';
+        document.getElementById('pdf-nome').textContent    = file.name;
+        document.getElementById('pdf-tamanho').textContent = `${mb} MB`;
+        limparMsg();
+    }
+
+    function processarArquivo(file) {
+        if (file.size > 2*1024*1024) { mostrarMsg('Arquivo muito grande. Máximo 2 MB.','error'); return; }
+        if (!['image/jpeg','image/png','image/webp'].includes(file.type)) { mostrarMsg('Formato inválido. Use JPG, PNG ou WEBP.','error'); return; }
+        arquivoCapa = file;
+        const reader = new FileReader();
+        reader.onload = e => {
+            document.getElementById('preview-img').src = e.target.result;
+            document.getElementById('preview-img').style.display = 'block';
+            document.getElementById('upload-placeholder').style.display = 'none';
+        };
+        reader.readAsDataURL(file);
+        limparMsg();
+    }
+
+    async function uploadCapa() {
+        if (!arquivoCapa) return imageUrlFinal;
+        const ext  = arquivoCapa.name.split('.').pop();
+        const path = `${usuarioAtual.id}/${Date.now()}.${ext}`;
+        document.getElementById('upload-progress').style.display = 'block';
+        document.getElementById('upload-bar').style.width = '30%';
+        const { error } = await sb.storage.from('capas-produtos').upload(path, arquivoCapa, { contentType: arquivoCapa.type, upsert: false });
+        document.getElementById('upload-bar').style.width = '100%';
+        if (error) { mostrarMsg('Erro ao enviar imagem: '+error.message,'error'); return ''; }
+        const { data } = sb.storage.from('capas-produtos').getPublicUrl(path);
+        return data.publicUrl;
+    }
+
+    async function uploadPdf() {
+        if (!arquivoPdf) return produtoOriginal?.link_pdf ?? '__sem_pdf__';
+        const path = `${usuarioAtual.id}/${Date.now()}.pdf`;
+        document.getElementById('upload-pdf-progress').style.display = 'block';
+        document.getElementById('upload-pdf-bar').style.width = '30%';
+        const { error } = await sb.storage.from('livros-pdf').upload(path, arquivoPdf, { contentType: 'application/pdf', upsert: false });
+        document.getElementById('upload-pdf-bar').style.width = '100%';
+        if (error) { mostrarMsg('Erro ao enviar PDF: '+error.message,'error'); return ''; }
+        const { data } = await sb.storage.from('livros-pdf').createSignedUrl(path, 60*60*24*365*10);
+        return data?.signedUrl || '';
+    }
+
+    async function salvarProduto() {
+        const titulo     = document.getElementById('titulo').value.trim();
+        const descricao  = document.getElementById('descricao').value.trim();
+        const preco      = parseFloat(document.getElementById('preco').value);
+        const categoria  = document.getElementById('categoria').value;
+        const autor      = document.getElementById('autor').value.trim();
+        const paginas    = document.getElementById('paginas').value.trim();
+        const intro      = document.getElementById('intro').value.trim();
+        const sobreAutor = document.getElementById('sobre-autor').value.trim();
+        const classifEl  = document.querySelector('input[name="classificacao"]:checked');
+        const btn        = document.getElementById('btn-salvar');
+
+        // Limpa mensagem anterior a cada nova tentativa de publicação
+        limparMsg();
+
+        if (!titulo)    return mostrarMsg('Informe o título do produto.','error');
+        if (!descricao) return mostrarMsg('Informe uma descrição.','error');
+        if (!preco || preco <= 0) return mostrarMsg('Informe um preço válido.','error');
+        if (!categoria) return mostrarMsg('Selecione uma categoria.','error');
+        if (!classifEl) return mostrarMsg('Selecione a classificação indicativa da obra.','error');
+        if (!modoEdicao && tipoAtual === 'digital' && !arquivoPdf) return mostrarMsg('Selecione o arquivo PDF do produto.','error');
+        if (tipoAtual === 'fisico' && (!document.getElementById('frete').value || !document.getElementById('estoque').value)) return mostrarMsg('Informe o frete e o estoque para produto físico.','error');
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando arquivos...';
+
+        const novaImageUrl = await uploadCapa();
+        if (document.getElementById('msg').classList.contains('error')) {
+            btn.disabled = false;
+            btn.innerHTML = modoEdicao ? '<i class="fas fa-save"></i> Salvar Alterações' : '<i class="fas fa-rocket"></i> Publicar Produto';
+            return;
+        }
+
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando PDF...';
+
+        const linkPdfRaw = await uploadPdf();
+        const linkPdf    = linkPdfRaw === '__sem_pdf__' ? null : linkPdfRaw;
+        if (linkPdfRaw !== '__sem_pdf__' && !linkPdf) {
+            btn.disabled = false;
+            btn.innerHTML = modoEdicao ? '<i class="fas fa-save"></i> Salvar Alterações' : '<i class="fas fa-rocket"></i> Publicar Produto';
+            return;
+        }
+
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
+
+        // Campos físico
+        const frete      = tipoAtual === 'fisico' ? parseFloat(document.getElementById('frete').value || 0) : 0;
+        const estoque    = tipoAtual === 'fisico' ? parseInt(document.getElementById('estoque').value || 0) : null;
+        const peso       = tipoAtual === 'fisico' ? document.getElementById('peso').value.trim()       : null;
+        const dimensoes  = tipoAtual === 'fisico' ? document.getElementById('dimensoes').value.trim()  : null;
+        const prazoProd  = tipoAtual === 'fisico' ? document.getElementById('prazo-prod').value.trim() : null;
+        const specs      = tipoAtual === 'fisico' ? document.getElementById('specs').value.trim()      : null;
+
+        const payload = {
+            title:          titulo,
+            author:         autor        || null,
+            category:       categoria,
+            image_url:      novaImageUrl || null,
+            descricao:      descricao    || null,
+            classificacao:  classifEl.value,
+            tipo:           tipoAtual,
+            // Digital
+            paginas:        tipoAtual === 'digital' && paginas ? parseInt(paginas) : null,
+            intro:          tipoAtual === 'digital' ? intro        || null : null,
+            sobre_autor:    tipoAtual === 'digital' ? sobreAutor   || null : null,
+            // Físico
+            frete:          frete,
+            estoque:        estoque,
+            peso:           peso,
+            dimensoes:      dimensoes,
+            prazo_prod:     prazoProd,
+            specs:          specs,
+        };
+
+        // Só inclui preço se não estiver bloqueado
+        if (!precoLocked) payload.price = preco;
+        if (linkPdf !== null) payload.link_pdf = linkPdf;
+
+        let dbError;
+        if (modoEdicao) {
+            const { error, data } = await sb.from('products')
+                .update({ ...payload, author_id: usuarioAtual.id })
+                .eq('id', editId).select();
+            dbError = error;
+            if (!error && (!data || data.length === 0)) {
+                dbError = { message: 'Nenhuma linha atualizada. Verifique as permissões (RLS).' };
+            }
+        } else {
+            const { error } = await sb.from('products')
+                .insert({ ...payload, author_id: usuarioAtual.id });
+            dbError = error;
+        }
+
+        if (dbError) {
+            mostrarMsg('Erro ao salvar: ' + dbError.message, 'error');
+            btn.disabled = false;
+            btn.innerHTML = modoEdicao ? '<i class="fas fa-save"></i> Salvar Alterações' : '<i class="fas fa-rocket"></i> Publicar Produto';
+            return;
+        }
+
+        // Upload das fotos extras (produto físico)
+        if (tipoAtual === 'fisico' && fotosExtras.length > 0) {
+            let pid = modoEdicao ? parseInt(editId) : null;
+            if (!pid) {
+                // Busca o ID do produto recém-inserido
+                const { data: novo } = await sb.from('products')
+                    .select('id').eq('author_id', usuarioAtual.id)
+                    .order('created_at', { ascending: false }).limit(1).single();
+                pid = novo?.id;
+            }
+            if (pid) await uploadFotosExtras(pid);
+        }
+
+        try {
+            await fetch('https://mercadopago-final.onrender.com/api/sync-produto', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ product_id: modoEdicao ? parseInt(editId) : null })
+            });
+        } catch(e) { console.warn('[sync-produto]', e); }
+
+        mostrarMsg(modoEdicao ? 'Produto atualizado com sucesso!' : 'Produto publicado com sucesso!', 'success');
+        btn.innerHTML = '<i class="fas fa-check"></i> ' + (modoEdicao ? 'Salvo!' : 'Publicado!');
+        setTimeout(() => window.location.href = '/static/autor-login.html', 2000);
+    }
+
+    // =========================================================
+    // FOTOS EXTRAS (produto físico)
+    // =========================================================
+    let fotosExtras   = [];   // [{url, file?, origem:'upload'|'url'}]
+    let fotoMetodo    = 'upload';
+    const MAX_FOTOS   = 5;
+
+    function setFotoMetodo(metodo) {
+        fotoMetodo = metodo;
+        document.getElementById('btn-metodo-upload').classList.toggle('active', metodo === 'upload');
+        document.getElementById('btn-metodo-url').classList.toggle('active',    metodo === 'url');
+        const urlWrap = document.getElementById('foto-url-wrap');
+        urlWrap.classList.toggle('show', metodo === 'url');
+    }
+
+    function renderFotosGrid() {
+        const grid = document.getElementById('fotos-grid');
+        if (!grid) return;
+        let html = '';
+
+        fotosExtras.forEach((foto, idx) => {
+            html += `
+                <div class="foto-slot filled">
+                    <img src="${foto.url}" alt="Foto ${idx+1}">
+                    <button type="button" class="remove-foto"
+                            onclick="removerFoto(${idx})" title="Remover">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>`;
+        });
+
+        if (fotosExtras.length < MAX_FOTOS) {
+            html += `
+                <div class="foto-slot empty" onclick="solicitarFoto()" title="Adicionar foto">
+                    <div class="foto-add-content">
+                        <i class="fas fa-plus"></i>
+                        <span>${fotosExtras.length + 1}/${MAX_FOTOS}</span>
+                    </div>
+                </div>`;
+        }
+
+        grid.innerHTML = html;
+    }
+
+    function solicitarFoto() {
+        if (fotoMetodo === 'upload') {
+            document.getElementById('input-foto-extra').click();
+        } else {
+            document.getElementById('foto-url-input').focus();
+        }
+    }
+
+    function onFotoUploadSelect(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (fotosExtras.length >= MAX_FOTOS) { mostrarMsg('Máximo de 5 fotos atingido.', 'error'); return; }
+        if (file.size > 3 * 1024 * 1024) { mostrarMsg('Foto muito grande. Máximo 3 MB.', 'error'); return; }
+        if (!['image/jpeg','image/png','image/webp'].includes(file.type)) {
+            mostrarMsg('Formato inválido. Use JPG, PNG ou WEBP.', 'error'); return;
+        }
+        const reader = new FileReader();
+        reader.onload = ev => {
+            fotosExtras.push({ url: ev.target.result, file, origem: 'upload' });
+            renderFotosGrid();
+        };
+        reader.readAsDataURL(file);
+        e.target.value = '';
+    }
+
+    function adicionarFotoURL() {
+        const input = document.getElementById('foto-url-input');
+        const url   = input.value.trim();
+        if (!url) return;
+        if (fotosExtras.length >= MAX_FOTOS) { mostrarMsg('Máximo de 5 fotos atingido.', 'error'); return; }
+        if (!url.startsWith('http')) { mostrarMsg('URL inválida. Deve começar com http.', 'error'); return; }
+        fotosExtras.push({ url, origem: 'url' });
+        input.value = '';
+        renderFotosGrid();
+    }
+
+    function removerFoto(idx) {
+        fotosExtras.splice(idx, 1);
+        renderFotosGrid();
+    }
+
+    async function uploadFotosExtras(productId) {
+        const sbClient = window._sb || sb;
+        const urls = [];
+        for (let i = 0; i < fotosExtras.length; i++) {
+            const foto = fotosExtras[i];
+            if (foto.origem === 'url') {
+                urls.push({ url: foto.url, ordem: i });
+            } else {
+                // Upload para Supabase Storage
+                const ext  = foto.file.name.split('.').pop();
+                const path = `${usuarioAtual.id}/${productId}/${Date.now()}_${i}.${ext}`;
+                const { error } = await sbClient.storage
+                    .from('fotos-produto')
+                    .upload(path, foto.file, { contentType: foto.file.type, upsert: false });
+                if (error) {
+                    console.error('Erro upload foto:', error);
+                    continue;
+                }
+                const { data } = sbClient.storage.from('fotos-produto').getPublicUrl(path);
+                urls.push({ url: data.publicUrl, ordem: i });
+            }
+        }
+
+        if (urls.length === 0) return;
+
+        // Salva na tabela product_photos
+        // Remove fotos antigas do produto primeiro
+        await sbClient.from('product_photos').delete().eq('product_id', productId);
+
+        const inserts = urls.map(u => ({
+            product_id: productId,
+            url:        u.url,
+            ordem:      u.ordem,
+        }));
+        const { error } = await sbClient.from('product_photos').insert(inserts);
+        if (error) console.error('Erro ao salvar fotos:', error);
+    }
+
+    async function carregarFotosExtras(productId) {
+        const sbClient = window._sb || sb;
+        const { data } = await sbClient.from('product_photos')
+            .select('url, ordem')
+            .eq('product_id', productId)
+            .order('ordem');
+        if (data && data.length > 0) {
+            fotosExtras = data.map(f => ({ url: f.url, origem: 'url' }));
+            renderFotosGrid();
+        }
+    }
+
+
+
+    function mostrarMsg(texto, tipo) {
+        const el = document.getElementById('msg');
+        el.textContent = texto;
+        el.className = `msg ${tipo}`;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    function limparMsg() { document.getElementById('msg').className = 'msg'; }
+</script>
+</body>
+</html>
