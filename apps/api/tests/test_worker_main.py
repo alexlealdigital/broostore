@@ -33,6 +33,6 @@ def test_inicia_worker_com_scheduler(monkeypatch, app):
         def work(self, **kwargs):
             capturado["work"] = kwargs
 
-    monkeypatch.setattr(worker_main, "Worker", FakeWorker)
+    monkeypatch.setattr(worker_main, "ThrottledWorker", FakeWorker)
     worker_main.main()   # o app do job é o app de teste (jobs.set_job_app na fixture)
     assert capturado["queues"] == ["default"] and capturado["work"] == {"with_scheduler": True}

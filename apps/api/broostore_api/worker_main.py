@@ -4,12 +4,46 @@ import sys
 
 import redis
 from rq import Worker
+from rq.defaults import DEFAULT_LOGGING_DATE_FORMAT, DEFAULT_LOGGING_FORMAT
+from rq.scheduler import RQScheduler
 
 from .config import configure_logging, get_settings
 from .extensions import db
 from .jobs import get_job_app
 
 logger = logging.getLogger("broostore")
+
+class ThrottledWorker(Worker):
+    """Worker do RQ cujo agendador consulta o Redis a cada ``rq_scheduler_interval_s`` s.
+
+    O agendador (necessário para os retries com intervalo) consulta o Redis a cada 1 s por
+    padrão: ~780 mil comandos/dia mesmo sem nenhuma venda, o que estoura qualquer plano que
+    limita ou cobra por comando (ex.: Upstash grátis = 500 mil/mês). Com 120 s o consumo cai
+    ~100x e os retries só esperam até 2 min a mais (config.DEFAULT_RQ_SCHEDULER_INTERVAL_S).
+    """
+
+    def _start_scheduler(self, burst=False, logging_level="INFO",
+                         date_format=DEFAULT_LOGGING_DATE_FORMAT, log_format=DEFAULT_LOGGING_FORMAT):
+        self.scheduler = RQScheduler(
+            self.queues,
+            connection=self.connection,
+            interval=get_settings().rq_scheduler_interval_s,
+            logging_level=logging_level if logging_level is not None else self.log.level,
+            date_format=date_format,
+            log_format=log_format,
+            serializer=self.serializer,
+        )
+        self.scheduler.acquire_locks()
+        if self.scheduler.acquired_locks:
+            if burst:
+                try:
+                    self.scheduler.register_birth()
+                    self.scheduler.enqueue_scheduled_jobs()
+                finally:
+                    self.scheduler.release_locks()
+                    self.scheduler.register_death()
+            else:
+                self.scheduler.start()
 
 
 def main():
@@ -37,7 +71,7 @@ def main():
 
     # Iniciar worker. with_scheduler=True é necessário para os retries com intervalo (F1).
     try:
-        worker = Worker(["default"], connection=redis_conn)
+        worker = ThrottledWorker(["default"], connection=redis_conn)
         logger.info("[WORKER] 🚀 Worker iniciado...")
         worker.work(with_scheduler=True)
     except Exception as e:
