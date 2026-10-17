@@ -60,6 +60,11 @@ DEFAULT_BROOSTOCK_URL = "https://brootechstock.netlify.app/login"
 JOB_RETRY_MAX = 5
 JOB_RETRY_INTERVALS = [60, 300, 900, 3600, 7200]
 
+# O agendador do RQ (que dispara os retries acima) consulta o Redis a cada 1 s por padrão:
+# ~780 mil comandos/dia mesmo sem vendas. Aqui o padrão é 120 s (~7 mil/dia).
+# Variável RQ_SCHEDULER_INTERVAL (segundos) ajusta; os retries só esperam até esse tempo a mais.
+DEFAULT_RQ_SCHEDULER_INTERVAL_S = 120
+
 # Nome do job enfileirado POR STRING (jobs já na fila do Redis dependem dele).
 JOB_NAME = "worker.process_mercado_pago_webhook"
 
@@ -90,6 +95,7 @@ class Settings:
     port: int
     dashboard_origin: Optional[str]
     cors_extra_origins: tuple = ()
+    rq_scheduler_interval_s: int = DEFAULT_RQ_SCHEDULER_INTERVAL_S
 
     @property
     def redis_url(self) -> str:
@@ -117,6 +123,15 @@ def is_postgres(url: str) -> bool:
 
 def _truthy(value: Optional[str]) -> bool:
     return (value or "").strip().lower() in ("1", "true")
+
+
+def _positive_int(value: Optional[str], default: int) -> int:
+    """Inteiro >= 1 vindo do ambiente; valor ausente ou inválido volta ao padrão."""
+    try:
+        n = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return n if n >= 1 else default
 
 
 def _split_origins(value: Optional[str]) -> tuple:
@@ -152,6 +167,7 @@ def get_settings() -> Settings:
         port=int(env.get("PORT", 5000)),
         dashboard_origin=env.get("DASHBOARD_ORIGIN") or None,
         cors_extra_origins=_split_origins(env.get("CORS_EXTRA_ORIGINS")),
+        rq_scheduler_interval_s=_positive_int(env.get("RQ_SCHEDULER_INTERVAL"), DEFAULT_RQ_SCHEDULER_INTERVAL_S),
     )
 
 
