@@ -30,6 +30,8 @@ ALL_ENV_VARS = [
     "WEBHOOK_VALIDATE_SIGNATURE", "EMAIL_USER", "EMAIL_PASSWORD", "SMTP_SERVER", "SMTP_PORT",
     "RESEND_API_KEY", "MELHOR_ENVIO_URL", "MELHOR_ENVIO_TOKEN", "MELHOR_ENVIO_EMAIL", "CEP_ORIGEM",
     "ADMIN_TOKEN", "BROOSTOCK_URL", "PORT", "DASHBOARD_ORIGIN", "CORS_EXTRA_ORIGINS",
+    "LOJA_URL", "ADMIN_SECRET_KEY", "BROOSTOCK_SUPABASE_URL", "BROOSTOCK_SUPABASE_SERVICE_KEY",
+    "MEUAPP_URL", "MEUAPP_SUPABASE_URL", "MEUAPP_SUPABASE_SERVICE_KEY", "RQ_SCHEDULER_INTERVAL",
 ]
 
 
@@ -67,6 +69,9 @@ class FakeHTTP:
         self.sales_existing = set() # payment_ids já registrados no Supabase
         self.sales_posted = []
         self.sales_status = 201
+        self.licenses_posted = []   # espelho de licenças no Supabase de um app: (url, json, headers)
+        self.licenses_status = 201
+        self.licenses_raises = None
         self.me_status = 200
         self.me_body = default_me_options()
         self.me_raises = None
@@ -107,6 +112,11 @@ class FakeHTTP:
         if url.endswith("/rest/v1/sales"):
             self.sales_posted.append(kwargs.get("json"))
             return FakeResponse(self.sales_status, None, "ok")
+        if "/rest/v1/licenses" in url:
+            if self.licenses_raises:
+                raise self.licenses_raises
+            self.licenses_posted.append((url, kwargs.get("json"), kwargs.get("headers")))
+            return FakeResponse(self.licenses_status, None, "ok")
         raise AssertionError(f"POST inesperado no teste: {url}")
 
 

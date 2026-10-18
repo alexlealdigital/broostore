@@ -9,8 +9,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+from .. import apps_config
 from ..extensions import db
 from ..models import ChaveLicenca, PlanoAssinatura
+from . import chaves as chaves_service
 from . import email as email_service
 from . import licencas as licencas_service
 
@@ -29,6 +31,13 @@ class Cumprimento:
     licenca_expira_em: Optional[datetime] = None
     rotulo_plano: Optional[str] = None
     ja_cumprido: bool = False  # True quando é um retry e nada novo foi reservado/estendido
+    # --- licença por app (assinatura): usado no e-mail e no espelho do Supabase do app ---
+    app_slug: Optional[str] = None
+    licenca_email: Optional[str] = None
+    # --- chave gerada na compra (planos_chave): validade, plano e se foi renovação ---
+    chave_expira_em: Optional[datetime] = None
+    chave_rotulo: Optional[str] = None
+    chave_renovada: bool = False
 
 
 def cumprir_pedido(produto, cobranca) -> Cumprimento:
@@ -43,10 +52,13 @@ def cumprir_pedido(produto, cobranca) -> Cumprimento:
     elif produto.tipo == "assinatura":
         if licencas_service.licenca_ja_aplicada(cobranca):
             logger.info(f"[WORKER] Licença da cobrança {cobranca.id} já aplicada. Não estende de novo.")
-            licenca = licencas_service.licenca_da_cobranca(cobranca)
             plano = db.session.get(PlanoAssinatura, produto.id)
+            slug = apps_config.normalizar_slug(plano.app_slug) if plano else None
+            licenca = licencas_service.licenca_da_cobranca(cobranca, slug)
             resultado.licenca_expira_em = licenca.expira_em
             resultado.rotulo_plano = plano.rotulo if plano else licenca.plano
+            resultado.app_slug = licenca.app_slug
+            resultado.licenca_email = licenca.cliente_email
             resultado.ja_cumprido = True
         else:
             logger.info(f"[WORKER] Ativando/renovando licença para {produto.nome}...")
@@ -57,14 +69,28 @@ def cumprir_pedido(produto, cobranca) -> Cumprimento:
             licencas_service.marcar_licenca_aplicada(cobranca)
             resultado.licenca_expira_em = licenca_ativa.expira_em
             resultado.rotulo_plano = rotulo_plano
+            resultado.app_slug = licenca_ativa.app_slug
+            resultado.licenca_email = licenca_ativa.cliente_email
 
     elif produto.tipo in ["game", "app"]:
-        existente = ChaveLicenca.query.filter_by(cobranca_id=cobranca.id).first()
-        if existente is not None:
+        aplicada = chaves_service.chave_ja_aplicada(cobranca)
+        gerada = None if aplicada is not None else chaves_service.gerar_ou_renovar_chave_app(produto, cobranca)
+        if aplicada is not None:
+            existente, renovada = aplicada
             logger.info(f"[WORKER] Chave já reservada para a cobrança {cobranca.id}. Não reserva outra.")
             resultado.chave_entregue = existente.chave_serial
+            resultado.chave_expira_em = existente.expira_em
+            resultado.chave_rotulo = existente.plano
+            resultado.chave_renovada = renovada
             resultado.ja_cumprido = True
+        elif gerada is not None:
+            chave_obj, expira, rotulo, renovada = gerada
+            resultado.chave_entregue = chave_obj.chave_serial
+            resultado.chave_expira_em = expira
+            resultado.chave_rotulo = rotulo
+            resultado.chave_renovada = renovada
         else:
+            # Produto sem plano em planos_chave: estoque pré-carregado (fluxo antigo).
             logger.info(f"[WORKER] Reservando chave para {produto.nome}...")
             chave_obj = ChaveLicenca.query.filter(
                 ChaveLicenca.produto_id == produto.id,
@@ -106,6 +132,7 @@ def enviar_email_entrega(cobranca, produto, cumprimento: Cumprimento) -> bool:
             nome_cliente=cobranca.cliente_nome,
             rotulo_plano=cumprimento.rotulo_plano,
             expira_em=cumprimento.licenca_expira_em,
+            app_slug=cumprimento.app_slug or apps_config.APP_PADRAO,
         )
     return email_service.enviar_email_confirmacao(
         destinatario=cobranca.cliente_email,
@@ -114,5 +141,8 @@ def enviar_email_entrega(cobranca, produto, cumprimento: Cumprimento) -> bool:
         link_produto=produto.link_download,
         cobranca=cobranca,
         nome_produto=produto.nome,
-        chave_acesso=cumprimento.chave_entregue
+        chave_acesso=cumprimento.chave_entregue,
+        expira_em=cumprimento.chave_expira_em,
+        rotulo_plano=cumprimento.chave_rotulo,
+        renovada=cumprimento.chave_renovada,
     )

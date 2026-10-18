@@ -1,7 +1,7 @@
 """E-mails transacionais da BrooStore.
 
-  * SMTP (Zoho por padrão): entrega de produto, pedido físico, licença BrooStock,
-    boas-vindas do teste grátis e avisos de expiração (cron).
+  * SMTP (Zoho por padrão): entrega de produto, pedido físico, licença de app (BrooStock e
+    os próximos, textos em apps_config), boas-vindas do teste grátis e avisos de expiração (cron).
   * Resend: formulário de contato.
 
 Todos os textos/HTML foram portados SEM alteração de conteúdo. Cada função de
@@ -15,7 +15,8 @@ from email.mime.text import MIMEText
 
 import resend
 
-from ..config import BROOSTOCK_ORIGIN, get_settings
+from .. import apps_config
+from ..config import get_settings
 
 logger = logging.getLogger("broostore")
 
@@ -66,40 +67,43 @@ def _montar(assunto, email_user, destinatario, corpo_html):
 # ---------------------------------------------------------------------------
 # Teste grátis (web)
 # ---------------------------------------------------------------------------
-def enviar_boas_vindas(destinatario, expira_em):
+def enviar_boas_vindas(destinatario, expira_em, app_slug=apps_config.APP_PADRAO):
     """E-mail de boas-vindas do teste grátis. Best-effort: nunca derruba o cadastro.
-    Reaproveita o mesmo SMTP (Zoho) usado pelo worker/avisos de expiração."""
+    Reaproveita o mesmo SMTP (Zoho) usado pelo worker/avisos de expiração.
+    Textos e links vêm de apps_config (um app novo não exige mudar este código)."""
     cred = _credenciais()
     if cred is None:
         logger.warning("[TRIAL] Boas-vindas NÃO enviada: SMTP (EMAIL_USER/EMAIL_PASSWORD) não configurado no serviço.")
         return False
     smtp_server, email_user, email_pass = cred
 
+    cfg = apps_config.config_ou_generica(app_slug)
+    nome = cfg["nome"]
     expira_str = expira_em.strftime("%d/%m/%Y")
+    passos = "\n      ".join(f"<li>{p}</li>" for p in cfg.get("boas_vindas_passos", []))
+    bloco_passos = (f'''
+    <p style="margin-top:18px;"><strong>Comece por aqui:</strong></p>
+    <ol style="color:#cdd7e3;line-height:1.7;padding-left:18px;">
+      {passos}
+    </ol>''') if passos else ""
     html = f"""<!DOCTYPE html>
 <html><body style="font-family:Arial,sans-serif;background:#0d1b2a;color:#e0e6ed;padding:24px;">
   <div style="max-width:560px;margin:0 auto;background:#14213d;border-radius:12px;padding:28px;">
-    <h2 style="color:#48cae4;margin-top:0;">Bem-vindo ao BrooStock! 🎉</h2>
-    <p>Seu <strong>teste grátis de 7 dias</strong> está ativo. Você pode usar o sistema completo
-       até <strong>{expira_str}</strong>, sem cartão e sem compromisso.</p>
-    <p style="margin-top:18px;"><strong>Comece por aqui:</strong></p>
-    <ol style="color:#cdd7e3;line-height:1.7;padding-left:18px;">
-      <li>Cadastre seu primeiro produto (custo, preço e estoque mínimo).</li>
-      <li>Registre uma venda em Movimentações.</li>
-      <li>Veja seu lucro e sua margem no Painel.</li>
-    </ol>
+    <h2 style="color:#48cae4;margin-top:0;">Bem-vindo ao {nome}! 🎉</h2>
+    <p>Seu <strong>teste grátis de {cfg['trial_dias']} dias</strong> está ativo. Você pode usar o sistema completo
+       até <strong>{expira_str}</strong>, sem cartão e sem compromisso.</p>{bloco_passos}
     <p style="text-align:center;margin:26px 0;">
-      <a href="{BROOSTOCK_ORIGIN}/painel" style="background:#15bcd6;color:#012;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px;display:inline-block;">Abrir o BrooStock</a>
+      <a href="{apps_config.url_painel(app_slug)}" style="background:#15bcd6;color:#012;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px;display:inline-block;">Abrir o {nome}</a>
     </p>
     <p style="font-size:0.85em;color:#9fb0c3;">Quando quiser, é só assinar para continuar usando depois do teste. Qualquer dúvida, estamos por aqui.</p>
   </div>
 </body></html>"""
 
     try:
-        msg = _montar("Bem-vindo ao BrooStock — seus 7 dias grátis começaram 🎉",
+        msg = _montar(f"Bem-vindo ao {nome} — seus {cfg['trial_dias']} dias grátis começaram 🎉",
                       email_user, destinatario, html)
         _enviar_smtp(msg, smtp_server, email_user, email_pass, timeout=15)
-        logger.info(f"[TRIAL] Boas-vindas enviada para {destinatario}.")
+        logger.info(f"[TRIAL] Boas-vindas ({cfg['slug']}) enviada para {destinatario}.")
         return True
     except Exception as e:
         logger.error(f"[TRIAL] Falha ao enviar boas-vindas para {destinatario}: {e}")
@@ -179,8 +183,13 @@ body{{font-family:Arial,sans-serif;line-height:1.6;color:#333;margin:0;padding:0
         return False
 
 
-def enviar_email_confirmacao(destinatario, nome_cliente, valor, link_produto, cobranca, nome_produto, chave_acesso=None):
-    """Envia email de entrega do produto."""
+def enviar_email_confirmacao(destinatario, nome_cliente, valor, link_produto, cobranca, nome_produto, chave_acesso=None,
+                             expira_em=None, rotulo_plano=None, renovada=False):
+    """Envia email de entrega do produto.
+
+    ``expira_em``/``rotulo_plano``/``renovada`` só vêm para chaves geradas na compra
+    (planos_chave): mostram a validade e avisam quando a chave foi renovada. Chave do estoque
+    pré-carregado chega sem eles e o e-mail continua exatamente o de sempre."""
     cred = _credenciais()
     if cred is None:
         logger.error("[WORKER] ERRO: Credenciais de email não configuradas.")
@@ -200,6 +209,36 @@ def enviar_email_confirmacao(destinatario, nome_cliente, valor, link_produto, co
                 <a href="https://mercadopago-final.onrender.com/comprimir-pdf.html" style="background-color: #fca311; color: #000; padding: 14px 28px; text-decoration: none; border-radius: 25px; font-weight: bold;">🗜️ Ir para o Compressor</a>
             </div>
             <p style="font-size:0.85em; color:#888;">Este código é de uso único e válido por 24 horas.</p>
+        """
+    elif chave_acesso and (rotulo_plano or expira_em or renovada):
+        plano_txt = f" ({rotulo_plano})" if rotulo_plano else ""
+        if expira_em:
+            validade_html = (f'<p style="text-align:center;margin:0 0 6px;">Licença{plano_txt} válida até '
+                             f'<strong>{expira_em.strftime("%d/%m/%Y")}</strong>.</p>')
+        else:
+            validade_html = f'<p style="text-align:center;margin:0 0 6px;">Licença{plano_txt} <strong>vitalícia</strong>.</p>'
+
+        if renovada:
+            assunto = f"BrooStore: Sua licença de \"{nome_produto}\" foi renovada! 🔄"
+            titulo_chave = "Licença renovada! 🔄"
+            aviso_chave = "<p>Sua chave continua a <strong>mesma</strong> — não precisa digitar nada de novo. A validade já foi estendida.</p>"
+        else:
+            assunto = f"BrooStore: Sua chave de acesso para \"{nome_produto}\" chegou! 🚀"
+            titulo_chave = "Sua Chave de Acesso está aqui! 🔑"
+            aviso_chave = "<p>Copie a chave acima e cole no app quando ele pedir. Se precisar baixar:</p>"
+
+        instrucoes_entrega = f"""
+            <p>Agradecemos por escolher a <strong>BrooStore</strong>! Seu pagamento de <strong>R$ {_brl(valor)}</strong> foi confirmado.</p>
+            <h2 style="color: #27ae60;">{titulo_chave}</h2>
+            <div style="background-color: #e0f2f1; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0 8px; border: 2px dashed #27ae60;">
+                <code style="font-size: 1.5em; font-weight: bold; color: #14213d; display: block; word-break: break-all;">{chave_acesso}</code>
+            </div>
+            {validade_html}
+            {aviso_chave}
+            <div style="text-align: center; margin: 25px 0;">
+                <a href="{link_produto}" style="background-color: #27ae60; color: white; padding: 14px 28px; text-decoration: none; border-radius: 25px; font-weight: bold;">📥 Baixar o Instalador</a>
+            </div>
+            <p style="font-size:0.85em; color:#888;">Guarde este e-mail: a chave é pessoal. Avisaremos antes da licença vencer.</p>
         """
     elif chave_acesso:
         assunto = f"BrooStore: Sua chave de acesso para \"{nome_produto}\" chegou! 🚀"
@@ -265,8 +304,9 @@ def enviar_email_confirmacao(destinatario, nome_cliente, valor, link_produto, co
         return False
 
 
-def enviar_email_licenca(destinatario, nome_cliente, rotulo_plano, expira_em):
-    """Envia e-mail confirmando a ativação/renovação da licença do BrooStock."""
+def enviar_email_licenca(destinatario, nome_cliente, rotulo_plano, expira_em, app_slug=apps_config.APP_PADRAO):
+    """Envia e-mail confirmando a ativação/renovação da licença de um app
+    (nome e endereço vêm de apps_config)."""
     cred = _credenciais()
     if cred is None:
         logger.error("[WORKER] ERRO: Credenciais de email não configuradas.")
@@ -275,18 +315,20 @@ def enviar_email_licenca(destinatario, nome_cliente, rotulo_plano, expira_em):
 
     validade_str = expira_em.strftime("%d/%m/%Y")
     plano_str = (rotulo_plano or "assinatura").capitalize()
-    assunto = "BrooStock: Sua licença está ativa! 🚀"
+    nome_app = apps_config.config_ou_generica(app_slug)["nome"]
+    assunto = f"{nome_app}: Sua licença está ativa! 🚀"
     corpo_html = f"""<!DOCTYPE html>
 <html><body style="font-family:Arial,sans-serif;background:#0d1b2a;color:#e0e6ed;padding:24px;">
   <div style="max-width:560px;margin:0 auto;background:#14213d;border-radius:12px;padding:28px;">
-    <h2 style="color:#48cae4;margin-top:0;">Licença BrooStock ativada ✅</h2>
+    <h2 style="color:#48cae4;margin-top:0;">Licença {nome_app} ativada ✅</h2>
     <p>Olá, {nome_cliente or 'cliente'}!</p>
-    <p>Recebemos seu pagamento e sua licença do <strong>BrooStock</strong> já está ativa.</p>
+    <p>Recebemos seu pagamento e sua licença do <strong>{nome_app}</strong> já está ativa.</p>
     <div style="background:#0d1b2a;border:1px solid #2a3b55;border-radius:8px;padding:16px;margin:16px 0;">
       <p style="margin:4px 0;">Plano: <strong>{plano_str}</strong></p>
       <p style="margin:4px 0;">Válida até: <strong>{validade_str}</strong></p>
     </div>
-    <p>Acesse o BrooStock com o <strong>mesmo e-mail desta compra</strong> ({destinatario}) para usar a ferramenta liberada.</p>
+    <p>Acesse o {nome_app} com o <strong>mesmo e-mail desta compra</strong> ({destinatario}) para usar a ferramenta liberada.</p>
+    <p style="text-align:center;margin:22px 0;"><a href="{apps_config.url_login(app_slug)}" style="background:#15bcd6;color:#012;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px;display:inline-block;">Abrir o {nome_app}</a></p>
     <p style="font-size:0.85em;color:#9fb0c3;">Quando a licença estiver perto de expirar, avisaremos por e-mail para você renovar.</p>
   </div>
 </body></html>"""
@@ -305,14 +347,15 @@ def enviar_email_licenca(destinatario, nome_cliente, rotulo_plano, expira_em):
 # ---------------------------------------------------------------------------
 # Avisos de expiração (cron)
 # ---------------------------------------------------------------------------
-def html_aviso(titulo: str, paragrafo: str, cta_label: str) -> str:
+def html_aviso(titulo: str, paragrafo: str, cta_label: str, cta_url: str = None) -> str:
+    cta_url = cta_url or get_settings().broostock_url
     return f"""<!DOCTYPE html>
 <html><body style="font-family:Arial,sans-serif;background:#0d1b2a;color:#e0e6ed;padding:24px;">
   <div style="max-width:560px;margin:0 auto;background:#14213d;border-radius:12px;padding:28px;">
     <h2 style="color:#48cae4;margin-top:0;">{titulo}</h2>
     <p>{paragrafo}</p>
     <p style="text-align:center;margin:24px 0;">
-      <a href="{get_settings().broostock_url}" style="background:#15bcd6;color:#012;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px;display:inline-block;">{cta_label}</a>
+      <a href="{cta_url}" style="background:#15bcd6;color:#012;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px;display:inline-block;">{cta_label}</a>
     </p>
     <p style="font-size:0.85em;color:#9fb0c3;">Se você já renovou ou assinou, pode ignorar este aviso.</p>
   </div>

@@ -161,3 +161,23 @@ antigos foram substituídos por `README.md` e `docs/RENDER.md`.
 - O valor no texto do e-mail aparecia como `R$ 1.00`; agora `R$ 1,00` (padrao brasileiro, milhar com ponto).
 - So muda o texto dos e-mails. Nenhum valor, status ou rota mudou. Os testes de comparacao com o original
   normalizam apenas essas duas diferencas.
+
+## Licenças por app, chaves de licença e espelho no BrooStock (feat/licencas-apps)
+
+Portado do trabalho feito no repositório antigo (broorread), agora no código que o Render realmente publica.
+
+- **Licença por e-mail E por app** (`licencas.app`, `planos_assinatura.app`; padrão `broostock`). `/api/licenca/status`
+  e `/trial` aceitam `?app=` (ausente = `broostock`, desconhecido = 400) e passam a devolver `"app"`.
+  Registro dos apps em `broostore_api/apps_config.py` (textos de e-mail, links, dias de teste e CORS por app).
+- **Chaves de licença com duração** (`BROO-XXXX-XXXX-XXXX-XXXX`, dígito verificador): gerada na compra quando o produto
+  tem linha em `planos_chave`; comprar de novo renova a mesma chave. Sem essa linha vale o estoque pré-carregado de sempre.
+  A renovação é idempotente no retry (marca `chave_aplicada` em `cobrancas.observacoes`).
+- **`POST /api/validar_chave`** (limite de dispositivos por plano, rate limit por IP no Redis que falha aberto) e rotas de
+  suporte `/api/admin/chaves*` (header `X-Admin-Key` = `ADMIN_SECRET_KEY`; sem a variável, sempre 401).
+- **Espelho da licença no Supabase do app** (`<APP>_SUPABASE_URL` / `<APP>_SUPABASE_SERVICE_KEY`), best-effort: no
+  teste grátis e logo após o pedido ser cumprido. Sem as variáveis, só registra um aviso.
+- Scripts: `sincronizar_licencas_app.py`, `seed_planos_app.py`, `seed_apps_chaves.py`, `reprocessar_pagamentos.py`
+  (lista por padrão, `--executar` entrega); `notificar_expiracao.py` agora é por app, avisa chaves e reconcilia o espelho.
+- Colunas/tabelas novas já existem no Supabase da BrooStore (migrations aplicadas); `create_all()` não altera tabelas existentes.
+- Os testes de comparação com o original passam a aceitar só essas adições (colunas/rotas novas, botão "Abrir o app" no
+  e-mail de licença, texto do aviso de licença vencida vindo de `apps_config`).

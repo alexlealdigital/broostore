@@ -46,9 +46,13 @@ def test_golden_modelos_mesmas_tabelas_e_colunas(original, nova):
     for origem in (app_orig, worker_orig):
         for tabela, colunas in origem.items():
             esperado.setdefault(tabela, {}).update(colunas)
-    assert set(novo) == set(esperado)
+    # feat/licencas-apps ACRESCENTA (não altera) tabelas e colunas: licenças por app e chaves com duração.
+    assert set(novo) - set(esperado) == {"planos_chave", "ativacoes_licenca"}
+    extras = {"licencas": {"app"}, "planos_assinatura": {"app"},
+              "chaves_licenca": {"plano", "expira_em", "ativada_em", "revogada", "ultimo_aviso"}}
     for tabela, colunas in esperado.items():
-        assert novo[tabela] == colunas or set(novo[tabela]) == set(colunas), tabela
+        assert set(novo[tabela]) - set(colunas) == extras.get(tabela, set()), tabela
+        novo[tabela] = {c: v for c, v in novo[tabela].items() if c in colunas}
         # tipos/nullable iguais ao app.py original (fonte do schema de produção) para o que ele define
         for nome, spec in app_orig.get(tabela, {}).items():
             assert novo[tabela][nome] == spec, f"{tabela}.{nome}"
@@ -72,7 +76,15 @@ def test_golden_todas_as_rotas_do_original_existem_na_nova(original, nova):
         return {(r.rule, tuple(sorted(r.methods - {"HEAD", "OPTIONS"}))) for r in app.url_map.iter_rules()}
     orig, novo = regras(original.app), regras(nova)
     assert orig <= novo, f"faltando na API nova: {sorted(orig - novo)}"
-    assert novo - orig == {("/api/cobrancas/<external_reference>/status", ("GET",))}
+    # ... e as rotas das chaves de licença dos apps (feat/licencas-apps): validação + admin
+    assert novo - orig == {
+        ("/api/cobrancas/<external_reference>/status", ("GET",)),
+        ("/api/validar_chave", ("POST",)),
+        ("/api/admin/chaves", ("GET",)),
+        ("/api/admin/chaves/emitir", ("POST",)),
+        ("/api/admin/chaves/revogar", ("POST",)),
+        ("/api/admin/chaves/resetar-dispositivos", ("POST",)),
+    }
     # 18 rotas do app.py + painel (registrado só na nova/no teste) + /static do Flask
     rotas_app_py = {r for r in orig if not r[0].startswith(("/static", "/api/admin"))}
     assert len(rotas_app_py) == 18

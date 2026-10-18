@@ -8,6 +8,7 @@ from importlib import import_module
 
 from flask import Flask
 
+from . import apps_config
 from .config import (CORS_ALLOW_HEADERS, CORS_METHODS, CORS_ORIGINS, STATIC_DIR,
                      build_engine_options, build_flask_config, configure_logging,
                      get_settings, warn_if_default_secret)
@@ -47,6 +48,8 @@ def create_app(config_overrides=None, role="web"):
         allow_headers = list(CORS_ALLOW_HEADERS)
         # Opcional: dominios proprios do frontend (ex.: https://www.broostore.com.br)
         origins.extend(o for o in settings.cors_extra_origins if o not in origins)
+        # Origem de cada app cadastrado em apps_config (app novo = CORS liberado sem mexer aqui)
+        origins.extend(o for o in apps_config.origens_cors() if o not in origins)
         if settings.dashboard_origin:
             # Opcional (padrão desligado): libera o painel financeiro em outra origem.
             origins.append(settings.dashboard_origin)

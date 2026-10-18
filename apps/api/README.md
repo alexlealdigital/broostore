@@ -23,7 +23,7 @@ broostore_api/
   blueprints/              # produtos, licencas, cupons, cobrancas, webhook, contato, frete,
                            # ranking, compressao, admin_dashboard, static_files
   services/                # mercadopago, email, supabase_rest, frete, licencas, entrega, cupons
-scripts/                   # seed_planos_broostock.py, seed_chave_broostock.py, notificar_expiracao.py
+scripts/                   # seeds, notificar_expiracao, sincronizar_licencas_app, reprocessar_pagamentos
 static/                    # páginas da loja antiga (cópia idêntica do original)
 tests/                     # pytest (unitários, caracterização, golden vs. código original)
 docs/                      # RENDER.md (deploy/rollback), CHANGELOG-API.md
