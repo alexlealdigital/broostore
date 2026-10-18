@@ -90,10 +90,26 @@ def _sem_marca_de_idempotencia(raw):
         data = json.loads(raw)
         if isinstance(data, dict):
             data.pop("licenca_aplicada", None)
+            data.pop("chave_aplicada", None)
+            data.pop("chave_renovada", None)
             return json.dumps(data, sort_keys=True) if data else None
     except Exception:
         pass
     return raw
+
+
+# Colunas ACRESCENTADAS em feat/licencas-apps (licença por app, chaves com duração). Enquanto estiverem
+# no valor padrão (a única situação dos cenários comparados) não contam como diferença.
+_COLUNAS_NOVAS_PADRAO = {"app": "broostock", "plano": None, "expira_em": None, "ativada_em": None,
+                         "revogada": False, "ultimo_aviso": None}
+
+
+def _sem_colunas_novas(d):
+    """Remove, de uma linha de banco, as colunas novas que estão no valor padrão."""
+    if not isinstance(d, dict):
+        return d
+    return {k: v for k, v in d.items()
+            if not (k in _COLUNAS_NOVAS_PADRAO and v in (_COLUNAS_NOVAS_PADRAO[k], 0 if k == "revogada" else object()))}
 
 
 def norm(obj):
@@ -133,6 +149,8 @@ class Side:
         ctype = r.mimetype
         if ctype == "application/json":
             body = norm(r.get_json())
+            if isinstance(body, dict) and body.get("app") == "broostock":
+                body.pop("app")  # feat/licencas-apps: as rotas de licença passaram a devolver o app
         elif ctype in ("application/pdf", "image/jpeg"):
             body = f"<{ctype} bytes>"
         else:
@@ -149,7 +167,7 @@ class Side:
     def rows(self, sql, **params):
         with self.app.app_context():
             result = self.db.session.execute(text(sql), params)
-            data = [dict(r._mapping) for r in result]
+            data = [_sem_colunas_novas(dict(r._mapping)) for r in result]
             self.db.session.rollback()
             return norm(data)
 
@@ -180,14 +198,20 @@ def _first_diff(x, y, path="item"):
     return path, x, y
 
 
+# Botão "Abrir o <app>" acrescentado ao e-mail de licença (feat/licencas-apps): tirado dos DOIS lados.
+_BOTAO_ABRIR_APP = re.compile(r'\n    <p style="text-align:center;margin:22px 0;"><a href="[^"]*"[^>]*>Abrir o \w+</a></p>')
+
 _COSMETICO_BOTAO = (("[·] Baixar", "📥 Baixar"), ("[·] Ir para", "🗜️ Ir para"))
 
 
 def _normaliza_cosmetico(x):
     """Diferenças ESTÉTICAS intencionais do e-mail (ver CHANGELOG-API): botão sem '[·]' e valor
     com vírgula (R$ 1,00). O original é normalizado para o formato novo; todo o resto é comparado igual."""
-    import re
     if isinstance(x, str):
+        x = _BOTAO_ABRIR_APP.sub("", x)
+        # aviso de licença paga vencida: o texto agora vem de apps_config[..]["uso"]
+        x = x.replace("reativar o acesso ao seu estoque e painel.",
+                      "reativar o acesso a seu estoque e seu painel financeiro.")
         for velho, novo in _COSMETICO_BOTAO:
             x = x.replace(velho, novo)
         return re.sub(r"(?<=<strong>)R\$ (\d+)\.(\d{2})(?=</strong>)",
@@ -200,7 +224,7 @@ def _normaliza_cosmetico(x):
 
 
 def assert_same(original: Side, novo: Side):
-    a, b = _normaliza_cosmetico(original.log), novo.log
+    a, b = _normaliza_cosmetico(original.log), _normaliza_cosmetico(novo.log)
     for i, (x, y) in enumerate(zip(a, b)):
         if x != y:
             path, vx, vy = _first_diff(x, y, f"log[{i}] {x[0] if x else ''}")

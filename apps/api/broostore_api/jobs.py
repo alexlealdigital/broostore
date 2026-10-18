@@ -7,6 +7,7 @@ Fluxo (ver docs/CHANGELOG-API.md, F1 e F2):
      se já estiver ``delivered`` encerra (F2: dois webhooks simultâneos não entregam 2x).
   3. CUMPRE o pedido (licença ativada/renovada ou chave reservada) e grava a cobrança
      como ``approved`` — COMMIT ANTES de enviar o e-mail (F1: pedido pago nunca se perde).
+     Assinatura de app: espelha a licença no Supabase do app (best-effort, services/sync_licencas.py).
   4. Reabre a trava, envia o e-mail; sucesso => ``delivered``; falha => continua ``approved``
      e o job LEVANTA exceção para o RQ tentar de novo (``Retry`` definido ao enfileirar).
      O retry é idempotente: não reserva outra chave nem estende a licença novamente.
@@ -24,6 +25,7 @@ from .models import Cobranca, Sale
 from .services import entrega as entrega_service
 from .services import mercadopago as mp_service
 from .services.supabase_rest import registrar_venda_no_supabase
+from .services.sync_licencas import sincronizar_licenca
 
 logger = logging.getLogger("broostore")
 
@@ -144,6 +146,13 @@ def process_mercado_pago_webhook(payment_id):
         db.session.add(cobranca)
         db.session.commit()
         logger.info(f"[WORKER] ✅ Pedido cumprido e cobrança {cobranca_id} marcada 'approved' (e-mail pendente).")
+
+        # Assinatura de app: espelha a licença no Supabase DO APP (a RLS de lá exige licença ativa).
+        # Melhor esforço (nunca levanta); roda já aqui para o acesso liberar mesmo se o e-mail falhar.
+        # Se falhar, scripts/notificar_expiracao.py e sincronizar_licencas_app.py refazem.
+        if cumprimento.app_slug:
+            sincronizar_licenca(cumprimento.app_slug, cumprimento.licenca_email,
+                                cumprimento.licenca_expira_em, cumprimento.rotulo_plano, is_trial=False)
 
         # 6. Enviar e-mail (de novo sob trava: um segundo worker espera e vê 'delivered')
         cobranca = _travar_cobranca(cobranca_id)

@@ -5,6 +5,8 @@ mesmos nomes de tabelas e colunas, SEM mudança de schema.
 
   * Cobranca: versão do app.py (external_reference único, telefone, valor_original,
     vendedor, cupom). O worker usava uma versão reduzida das mesmas colunas.
+  * Licenças por app (``app``) e chaves com duração/dispositivos (PlanoChave, AtivacaoLicenca):
+    ver docs/PADRAO_NOVO_APP.md.
   * ChaveLicenca: colunas do app.py (inclui ``ativa_no_app``) + relationship
     ``produto`` (backref ``chaves``) que existia só no worker.
   * Sale: existia só no worker.
@@ -149,6 +151,34 @@ class ChaveLicenca(db.Model):
     cobranca_id = db.Column(db.Integer, db.ForeignKey('cobrancas.id'), unique=True, nullable=True)
     cliente_email = db.Column(db.String(200), nullable=True)
     ativa_no_app = db.Column(db.Boolean, default=False, nullable=False)
+    # --- chaves com duração (migração 002; chaves antigas do estoque deixam tudo vazio) ---
+    plano = db.Column(db.String(50), nullable=True)
+    expira_em = db.Column(db.DateTime, nullable=True)       # NULL = vitalícia
+    ativada_em = db.Column(db.DateTime, nullable=True)
+    revogada = db.Column(db.Boolean, default=False, server_default=db.false(), nullable=False)
+    ultimo_aviso = db.Column(db.String(20), nullable=True)  # '7d' | 'expirado' | None
+
+
+class PlanoChave(db.Model):
+    """Plano de um app vendido por chave (duração e nº de dispositivos)."""
+    __tablename__ = "planos_chave"
+    produto_id = db.Column(db.Integer, db.ForeignKey('produtos.id'), primary_key=True)
+    dias = db.Column(db.Integer, nullable=True)             # NULL = vitalícia
+    rotulo = db.Column(db.String(50), nullable=True)        # 'mensal' / 'anual' / 'vitalicia'
+    max_dispositivos = db.Column(db.Integer, default=1, nullable=False)
+    prefixo = db.Column(db.String(8), default="BROO", nullable=False)
+
+
+class AtivacaoLicenca(db.Model):
+    """Dispositivos em que uma chave já foi ativada."""
+    __tablename__ = "ativacoes_licenca"
+    id = db.Column(db.Integer, primary_key=True)
+    chave_id = db.Column(db.Integer, db.ForeignKey('chaves_licenca.id', ondelete="CASCADE"),
+                         nullable=False, index=True)
+    device_id = db.Column(db.String(128), nullable=False)
+    ativada_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    ultimo_uso_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    __table_args__ = (db.UniqueConstraint("chave_id", "device_id", name="uq_ativacao_chave_device"),)
 
 
 class Sale(db.Model):
@@ -166,6 +196,8 @@ class PlanoAssinatura(db.Model):
     produto_id = db.Column(db.Integer, db.ForeignKey('produtos.id'), primary_key=True)
     dias = db.Column(db.Integer, nullable=False)            # 30, 365...
     rotulo = db.Column(db.String(50), nullable=True)        # 'mensal' / 'anual'
+    # A qual app (apps_config.APPS) este plano dá acesso. Migração 003.
+    app_slug = db.Column("app", db.String(50), nullable=False, default="broostock", server_default="broostock")
 
 
 class Licenca(db.Model):
@@ -180,3 +212,5 @@ class Licenca(db.Model):
     cobranca_id = db.Column(db.Integer, db.ForeignKey('cobrancas.id'), nullable=True)
     produto_id = db.Column(db.Integer, db.ForeignKey('produtos.id'), nullable=True)
     ultimo_aviso = db.Column(db.String(20), nullable=True)  # '7d' | '2d' | 'expirado' | None
+    # De qual app é esta licença (uma pessoa pode ter uma licença por app). Migração 003.
+    app_slug = db.Column("app", db.String(50), nullable=False, default="broostock", server_default="broostock")

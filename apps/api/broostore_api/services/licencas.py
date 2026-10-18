@@ -1,8 +1,9 @@
-"""Licenças / assinaturas do BrooStock."""
+"""Licenças / assinaturas dos apps (BrooStock e os próximos): uma licença por e-mail E por app."""
 import json
 import logging
 from datetime import datetime, timedelta
 
+from .. import apps_config
 from ..extensions import db
 from ..models import Licenca, PlanoAssinatura
 
@@ -21,7 +22,8 @@ def licenca_esta_ativa(licenca, agora=None):
 
 
 def ativar_ou_renovar_licenca(produto, cobranca):
-    """Cria ou estende a licença do cliente (renovação manual).
+    """Cria ou estende a licença do cliente NAQUELE app (renovação manual).
+    O app vem do plano (``planos_assinatura.app``); cada e-mail tem uma licença por app.
     Retorna (licenca, rotulo_plano) ou (None, None) se não houver plano configurado."""
     plano = db.session.get(PlanoAssinatura, produto.id)
     if not plano:
@@ -31,8 +33,9 @@ def ativar_ou_renovar_licenca(produto, cobranca):
     email = (cobranca.cliente_email or "").strip().lower()
     agora = datetime.utcnow()
 
+    slug = apps_config.normalizar_slug(plano.app_slug)
     licenca = (Licenca.query
-               .filter_by(cliente_email=email)
+               .filter_by(cliente_email=email, app_slug=slug)
                .order_by(Licenca.id.desc())
                .first())
 
@@ -52,6 +55,7 @@ def ativar_ou_renovar_licenca(produto, cobranca):
     else:
         licenca = Licenca(
             cliente_email=email,
+            app_slug=slug,
             plano=plano.rotulo,
             status="ativa",
             inicia_em=agora,
@@ -64,7 +68,7 @@ def ativar_ou_renovar_licenca(produto, cobranca):
         db.session.add(licenca)
 
     db.session.flush()
-    logger.info(f"[WORKER] Licença {plano.rotulo} de {email} válida até {nova_expira.date()}")
+    logger.info(f"[WORKER] Licença {slug}/{plano.rotulo} de {email} válida até {nova_expira.date()}")
     return licenca, plano.rotulo
 
 
@@ -89,11 +93,14 @@ def marcar_licenca_aplicada(cobranca):
     cobranca.observacoes = json.dumps(obs)
 
 
-def licenca_da_cobranca(cobranca):
-    """Licença usada no e-mail de um retry: a vinculada à cobrança ou a mais recente do e-mail."""
+def licenca_da_cobranca(cobranca, app_slug=None):
+    """Licença usada no e-mail de um retry: a vinculada à cobrança ou a mais recente do e-mail
+    (daquele app, quando ``app_slug`` é informado)."""
     licenca = Licenca.query.filter_by(cobranca_id=cobranca.id).first()
     if licenca is None:
         email = (cobranca.cliente_email or "").strip().lower()
-        licenca = (Licenca.query.filter_by(cliente_email=email)
-                   .order_by(Licenca.id.desc()).first())
+        consulta = Licenca.query.filter_by(cliente_email=email)
+        if app_slug:
+            consulta = consulta.filter_by(app_slug=apps_config.normalizar_slug(app_slug))
+        licenca = consulta.order_by(Licenca.id.desc()).first()
     return licenca

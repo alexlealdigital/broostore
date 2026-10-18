@@ -19,7 +19,7 @@ def test_status_nunca_teve_licenca_pode_testar(client):
     r = client.get("/api/licenca/status?email=novo@example.test")
     assert r.status_code == 200
     assert r.get_json() == {"ativa": False, "plano": None, "status": None, "expira_em": None,
-                            "is_trial": False, "pode_testar": True, "dias_restantes": 0}
+                            "is_trial": False, "pode_testar": True, "dias_restantes": 0, "app": "broostock"}
 
 
 def test_status_licenca_ativa(client, db_session):

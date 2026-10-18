@@ -2,7 +2,8 @@
 from datetime import date, datetime, timedelta
 
 from broostore_api.extensions import db
-from broostore_api.models import (ChaveLicenca, Cobranca, Cupom, Licenca, PlanoAssinatura, Produto, Vendedor)
+from broostore_api.models import (ChaveLicenca, Cobranca, Cupom, Licenca, PlanoAssinatura, PlanoChave, Produto,
+                                  Vendedor)
 
 
 def add_produto(id, nome="Produto Teste", preco=10.0, tipo="ebook", link="https://dl.example.test/p"):
@@ -28,13 +29,31 @@ def add_chaves(produto_id, *seriais):
     db.session.commit()
 
 
-def add_plano(produto_id, dias=30, rotulo="mensal"):
-    db.session.add(PlanoAssinatura(produto_id=produto_id, dias=dias, rotulo=rotulo))
+def add_plano(produto_id, dias=30, rotulo="mensal", app="broostock"):
+    db.session.add(PlanoAssinatura(produto_id=produto_id, dias=dias, rotulo=rotulo, app_slug=app))
     db.session.commit()
 
 
-def add_licenca(email, expira_em, status="ativa", plano="mensal", ultimo_aviso=None, cobranca_id=None):
-    lic = Licenca(cliente_email=email, plano=plano, status=status, inicia_em=datetime.utcnow(),
+def add_plano_chave(produto_id, dias=30, rotulo="mensal", max_dispositivos=1, prefixo="BROO"):
+    """Plano de um app vendido por chave (a chave é GERADA na compra)."""
+    db.session.add(PlanoChave(produto_id=produto_id, dias=dias, rotulo=rotulo,
+                              max_dispositivos=max_dispositivos, prefixo=prefixo))
+    db.session.commit()
+
+
+def add_chave_vendida(produto_id, serial, email="cli@example.test", expira_em=None, plano="mensal",
+                      revogada=False, vendida=True):
+    c = ChaveLicenca(chave_serial=serial, produto_id=produto_id, vendida=vendida,
+                     vendida_em=datetime.utcnow() if vendida else None, cliente_email=email,
+                     plano=plano, expira_em=expira_em, revogada=revogada)
+    db.session.add(c)
+    db.session.commit()
+    return c
+
+
+def add_licenca(email, expira_em, status="ativa", plano="mensal", ultimo_aviso=None, cobranca_id=None,
+                app="broostock"):
+    lic = Licenca(cliente_email=email, app_slug=app, plano=plano, status=status, inicia_em=datetime.utcnow(),
                   expira_em=expira_em, ultimo_pagamento_em=datetime.utcnow(), ultimo_aviso=ultimo_aviso,
                   cobranca_id=cobranca_id)
     db.session.add(lic)

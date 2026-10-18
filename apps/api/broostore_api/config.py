@@ -55,6 +55,7 @@ DEFAULT_SMTP_PORT = 587
 DEFAULT_MELHOR_ENVIO_URL = "https://www.melhorenvio.com.br/api/v2"
 DEFAULT_MELHOR_ENVIO_EMAIL = "entrega.broo@zohomail.com"
 DEFAULT_BROOSTOCK_URL = "https://brootechstock.netlify.app/login"
+DEFAULT_LOJA_URL = "https://broostore.netlify.app"  # onde o cliente renova a chave de um app
 
 # Política de retry do job (F1): 5 tentativas com espera crescente (segundos).
 JOB_RETRY_MAX = 5
@@ -92,6 +93,8 @@ class Settings:
     cep_origem: str
     admin_token: str
     broostock_url: str
+    loja_url: str
+    admin_secret_key: str
     port: int
     dashboard_origin: Optional[str]
     cors_extra_origins: tuple = ()
@@ -164,11 +167,23 @@ def get_settings() -> Settings:
         cep_origem=env.get("CEP_ORIGEM", ""),
         admin_token=env.get("ADMIN_TOKEN", ""),
         broostock_url=env.get("BROOSTOCK_URL", DEFAULT_BROOSTOCK_URL),
+        loja_url=env.get("LOJA_URL", DEFAULT_LOJA_URL),
+        admin_secret_key=env.get("ADMIN_SECRET_KEY", ""),
         port=int(env.get("PORT", 5000)),
         dashboard_origin=env.get("DASHBOARD_ORIGIN") or None,
         cors_extra_origins=_split_origins(env.get("CORS_EXTRA_ORIGINS")),
         rq_scheduler_interval_s=_positive_int(env.get("RQ_SCHEDULER_INTERVAL"), DEFAULT_RQ_SCHEDULER_INTERVAL_S),
     )
+
+
+def app_env(nome: str) -> Optional[str]:
+    """Variavel de ambiente de NOME DINAMICO, montada a partir do slug de um app.
+
+    Ex.: ``BROOSTOCK_URL``, ``BROOSTOCK_SUPABASE_URL``, ``BROOSTOCK_SUPABASE_SERVICE_KEY``.
+    Cada app novo ganha as suas variaveis sem mexer no codigo (ver docs/PADRAO_NOVO_APP.md).
+    Fica aqui porque este e o unico arquivo que le o ambiente.
+    """
+    return os.environ.get(nome)
 
 
 def build_engine_options(database_url: str, pool_recycle: int) -> dict:
